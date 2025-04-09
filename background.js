@@ -1,166 +1,105 @@
-// chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-//   if (message.action === "getHistory") {
-//     chrome.history.search({
-//       text: '',
-//       startTime: Date.now() - (24 * 60 * 60 * 1000), // past 24 hours
-//       maxResults: 10
-//     }, function(results) {
-//       results.forEach((page) => {
-//         console.log('--- Visited Page ---');
-//         console.log('URL:', page.url);
-//         console.log('Title:', page.title);
-//         console.log('Last Visit:', new Date(page.lastVisitTime).toLocaleString());
-//         console.log('Visit Count:', page.visitCount);
-//         console.log('Typed Count:', page.typedCount);
-//       });
-//     });
-//   }
-// });
-
-// chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-//   if (message.action === "getHistory") {
-//     chrome.history.search({
-//       text: '',
-//       startTime: Date.now() - (24 * 60 * 60 * 1000), // past 24 hours
-//       maxResults: 5
-//     }, function(results) {
-//       results.forEach((page) => {
-//         console.log('--- Visited Page ---');
-//         console.log('URL:', page.url);
-//         console.log('Title:', page.title);
-
-//         // Get visit details for this URL
-//         chrome.history.getVisits({ url: page.url }, function(visits) {
-//           visits.forEach((visit) => {
-//             console.log('  > Visit ID:', visit.visitId);
-//             console.log('  > Visit Time:', new Date(visit.visitTime).toLocaleString());
-//             console.log('  > Transition Type:', visit.transition);
-//           });
-//         });
-//       });
-//     });
-//   }
-// });
-
-// chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-//   if (message.action === "getHistory") {
-//     // (keep your old history logic here)
-//   }
-
-//   if (message.action === "userActivity") {
-//     console.log(`[ACTIVE] ${message.eventType} on ${message.url} at ${new Date(message.timestamp).toLocaleTimeString()}`);
-//     // Later: you can log/store this info per site per session
-//   }
-// });
-
-// let lastActivityTime = Date.now();
-// const IDLE_THRESHOLD = 1 * 60 * 1000; // 2 minutes
-
-// chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-//   if (message.action === "userActivity") {
-//     lastActivityTime = message.timestamp;
-
-//     // For now, just log it
-//     console.log(`[ACTIVE] ${message.eventType} on ${message.url} at ${new Date(message.timestamp).toLocaleTimeString()}`);
-//   }
-// });
-
-// setInterval(() => {
-//   const now = Date.now();
-//   const idleTime = now - lastActivityTime;
-
-//   if (idleTime > IDLE_THRESHOLD) {
-//     console.warn(`[DISTRACTED] User idle for ${Math.floor(idleTime / 1000)} seconds`);
-//     // You can trigger an alert or notification here
-//   }
-// }, 5000); // check every 5 seconds
-
-// let alerted = false; // prevent spamming notifications
-
-// setInterval(() => {
-//   const now = Date.now();
-//   const idleTime = now - lastActivityTime;
-
-//   if (idleTime > IDLE_THRESHOLD && !alerted) {
-//     alerted = true;
-
-//     chrome.notifications.create({
-//       type: "basic",
-//       iconUrl: "icon.png", // you can use any 128x128 image or comment this out for now
-//       title: "Focus Check 👀",
-//       message: "You've been idle for a while. Time to get back on track!",
-//       priority: 2
-//     });
-
-//     console.warn(`[ALERT] User idle for ${Math.floor(idleTime / 1000)} seconds`);
-//   }
-
-//   // Reset alert if user is active again
-//   if (idleTime < 10000) {
-//     alerted = false;
-//   }
-// }, 5000);
-
-// chrome.runtime.onInstalled.addListener(() => {
-//   chrome.tabs.query({}, (tabs) => {
-//     tabs.forEach((tab) => {
-//       if (tab.id && tab.url.startsWith("http")) {
-//         chrome.scripting.executeScript({
-//           target: { tabId: tab.id },
-//           files: ["content.js"]
-//         });
-//       }
-//     });
-//   });
-// });
-
 let lastActivityTime = Date.now();
 let activeStartTime = null;
-const ACTIVE_SESSION_THRESHOLD = 15 * 1000; // 15초 이상이면 집중 세션으로 간주
+const ACTIVE_SESSION_THRESHOLD = 15 * 1000;
 
-// 사용자로부터 메시지 수신 (content.js에서 전송됨)
+let eventCounter = {
+  mousemove: 0,
+  click: 0,
+  keydown: 0
+};
+
+let senderURLCache = null;
+
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.action === "userActivity") {
     lastActivityTime = message.timestamp;
 
+    if (message.url) {
+      senderURLCache = message.url;
+    }
+
     if (!activeStartTime) {
       activeStartTime = lastActivityTime;
+      eventCounter = { mousemove: 0, click: 0, keydown: 0 };
+    }
+
+    if (eventCounter[message.eventType] !== undefined) {
+      eventCounter[message.eventType]++;
     }
 
     console.log(`[ACTIVE] ${message.eventType} on ${message.url} at ${new Date(message.timestamp).toLocaleTimeString()}`);
   }
 });
 
-// 설치될 때: 모든 탭에 content.js 주입
 chrome.runtime.onInstalled.addListener(() => {
   console.log("FocusTrack installed!");
 
   chrome.tabs.query({}, (tabs) => {
     tabs.forEach((tab) => {
-      if (tab.id && tab.url?.startsWith("http")) {
+      // ✅ 확장 권한이 적용되는 URL만 필터링
+      const validURL = tab.url && tab.url.startsWith("http");
+
+      if (tab.id && validURL) {
         chrome.scripting.executeScript({
           target: { tabId: tab.id },
           files: ["content.js"]
+        }).catch((err) => {
+          console.warn(`Could not inject content.js into tab ${tab.url}`, err);
         });
       }
     });
   });
 });
 
-// 집중 세션 판단 (5초마다 체크)
 setInterval(() => {
   const now = Date.now();
 
   if (activeStartTime) {
     const activeDuration = now - activeStartTime;
 
-    // 사용자가 5초 이상 아무 활동이 없으면 세션 종료로 간주
     if (now - lastActivityTime > 5000) {
-      const sessionType = activeDuration >= ACTIVE_SESSION_THRESHOLD ? "Active Session ✅" : "Inactive Session ⚠️";
+      const sessionType = activeDuration >= ACTIVE_SESSION_THRESHOLD ? "active" : "inactive";
+      const startTime = activeStartTime;
+      const endTime = lastActivityTime + 5000;
+      const duration = Math.floor((endTime - startTime) / 1000);
+      const url = senderURLCache || "unknown";
+      const domain = url.split("/")[2] || "unknown";
 
-      console.log(`[SESSION END] ${sessionType} | Duration: ${Math.floor(activeDuration / 1000)}s`);
+      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+        const title = tabs[0]?.title || "Unknown Page";
 
-      // 세션 초기화
+        const sessionData = {
+          startTime,
+          endTime,
+          duration,
+          sessionType,
+          url,
+          title,
+          domain,
+          eventCount: { ...eventCounter }
+        };
+
+        console.log("[SESSION END]", sessionData);
+
+        // ⚠️ Wait until storage API is definitely available
+        if (typeof chrome !== "undefined" && chrome.storage && chrome.storage.local) {
+          try {
+            chrome.storage.local.get(["focusSessions"], (result) => {
+              const sessions = result.focusSessions || [];
+              sessions.push(sessionData);
+
+              chrome.storage.local.set({ focusSessions: sessions }, () => {
+                console.log("[STORAGE] Session saved. Total sessions:", sessions.length);
+              });
+            });
+          } catch (e) {
+            console.error("❌ Failed to store session:", e);
+          }
+        } else {
+          console.error("❌ chrome.storage.local is not available.");
+        }
+      });
+
       activeStartTime = null;
     }
   }
