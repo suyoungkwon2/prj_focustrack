@@ -1,0 +1,29 @@
+{
+  "manifest_version": 3,
+  "name": "FocusTrack",
+  "version": "1.0",
+  "description": "Tracks browsing and focus sessions",
+  "permissions": [
+    "history",
+    "tabs",
+    "scripting",
+    "storage",
+    "notifications"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_title": "FocusTrack"
+  }
+}
