@@ -1,0 +1,40 @@
+// {
+//     "manifest_version": 3,
+//     "name": "Focus Tracker",
+//     "version": "1.0",
+//     "description": "Alerts you when distracted and tracks productivity",
+//     "permissions": [
+//       "history"
+//     ],
+//     "background": {
+//       "service_worker": "background.js"
+//     },
+//     "action": {
+//       "default_popup": "popup.html"
+//     }
+//   }
+{
+  "manifest_version": 3,
+  "name": "Focus Tracker",
+  "version": "1.0",
+  "permissions": [
+    "history",
+    "tabs",
+    "scripting",
+    "notifications"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_popup": "popup.html"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}
+// This manifest file is for a Chrome extension that tracks user focus and productivity. It includes permissions for accessing browser history and tabs, and it injects a content script into all web pages to monitor user activity. The background script handles the main logic of the extension, while the popup provides a user interface for interaction.  
