@@ -1,15 +1,11 @@
-// ✅ 세션 임시 저장 후 Gemini 요약 결과로 업데이트하는 구조로 리팩토링
+// background.js (with UUID, segments, merge logging + session preview)
 
 let lastActivityTime = Date.now();
 let activeStartTime = null;
 const ACTIVE_SESSION_THRESHOLD = 15 * 1000;
+const MERGE_WINDOW = 10 * 60 * 1000;
 
-let eventCounter = {
-  mousemove: 0,
-  click: 0,
-  keydown: 0
-};
-
+let eventCounter = { mousemove: 0, click: 0, keydown: 0 };
 let senderURLCache = null;
 
 function formatTime(timestamp) {
@@ -17,32 +13,8 @@ function formatTime(timestamp) {
   return date.toISOString().replace("T", " ").substring(0, 19);
 }
 
-async function summarizeWithGemini({ url, title, bodyText }) {
-  try {
-    const GEMINI_API_KEY = "AIzaSyCsfpWTHI36q2CI-1BQqc95WXN38kTPv1A"; // Gemini 2.0 Flash
-    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`;
-
-    const prompt = `You are an assistant that analyzes web pages for user focus tracking.\n\nBased on the following webpage information — including the URL, title, and full document body text — perform the following tasks:\n\n1. Main Topic: [Summarize the main topic of the webpage in one concise sentence]\n\n2. Key Points: [Provide 3 to 5 bullet points]\n\n3. Category: [Choose one of: Growth / Productivity / Daily Life / Entertainment]\n\n---\nURL: ${url}\nTitle: ${title}\nContent:\n${bodyText.slice(0, 10000)}`;
-
-    const response = await fetch(endpoint, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        contents: [
-          {
-            parts: [{ text: prompt }]
-          }
-        ]
-      })
-    });
-
-    const result = await response.json();
-    console.log("[GEMINI] Summary received:", result);
-    return result?.candidates?.[0]?.content?.parts?.[0]?.text || "[No summary returned]";
-  } catch (error) {
-    console.error("[GEMINI] API call failed:", error);
-    return "[Gemini API error]";
-  }
+function generateUUID() {
+  return crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.floor(Math.random() * 1e9)}`;
 }
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -73,6 +45,8 @@ setInterval(() => {
     const endTime = lastActivityTime + 5000;
     const fallbackURL = senderURLCache || "unknown";
 
+    console.log(`[SESSION END] SessionType: ${sessionType} | Duration: ${duration}s | URL: ${fallbackURL}`);
+
     chrome.tabs.query({ active: true, currentWindow: true }, async (tabs) => {
       const tab = tabs[0];
       const tabInfo = {
@@ -81,84 +55,53 @@ setInterval(() => {
         title: tab?.title || "Unknown Page"
       };
 
-      const sessionData = {
-        startTime,
-        startTimeFormatted: formatTime(startTime),
-        endTime,
-        endTimeFormatted: formatTime(endTime),
-        duration,
-        sessionType,
-        url: tabInfo.url,
-        title: tabInfo.title,
-        domain: tabInfo.url.split("/")[2] || "unknown",
-        canTrackActivity: true,
-        eventCount: { ...eventCounter },
-        summaryTopic: "",
-        summaryPoints: [],
-        summaryCategory: "",
-        fullExtractedText: ""
-      };
+      chrome.storage.local.get(["focusSessions"], async (res) => {
+        const sessions = res.focusSessions || [];
+        const last = sessions[sessions.length - 1];
+        const isMergeable =
+          last &&
+          last.url === tabInfo.url &&
+          endTime - last.endTime <= MERGE_WINDOW;
 
-      console.log("[SESSION END]", sessionData);
+        if (isMergeable) {
+          console.log("[MERGE] with previous session:", last.id);
+          last.endTime = endTime;
+          last.endTimeFormatted = formatTime(endTime);
+          last.duration += duration;
+          last.eventCount.mousemove += eventCounter.mousemove;
+          last.eventCount.click += eventCounter.click;
+          last.eventCount.keydown += eventCounter.keydown;
+          last.segments.push({ start: startTime, end: endTime });
+        } else {
+          const newSession = {
+            id: generateUUID(),
+            startTime,
+            startTimeFormatted: formatTime(startTime),
+            endTime,
+            endTimeFormatted: formatTime(endTime),
+            duration,
+            sessionType,
+            url: tabInfo.url,
+            title: tabInfo.title,
+            domain: tabInfo.url.split("/")[2] || "unknown",
+            canTrackActivity: true,
+            eventCount: { ...eventCounter },
+            summaryTopic: "",
+            summaryPoints: [],
+            summaryCategory: "",
+            fullExtractedText: "",
+            segments: [{ start: startTime, end: endTime }]
+          };
+          sessions.push(newSession);
+          console.log("[STORAGE] New session added:", newSession.id);
+        }
 
-      // Step 1: Store raw session first
-      chrome.storage.local.get(["focusSessions"], (result) => {
-        const sessions = result.focusSessions || [];
-        sessions.push(sessionData);
-        chrome.storage.local.set({ focusSessions: sessions, lastSessionUrl: tabInfo.url }, () => {
-          console.log("[STORAGE] Session saved. Total sessions:", sessions.length);
+        chrome.storage.local.set({ focusSessions: sessions }, () => {
+          console.log("[STORAGE] Sessions saved. Total:", sessions.length);
+          const latest = sessions[sessions.length - 1];
+          console.log("[SESSION PREVIEW]", JSON.stringify(latest, null, 2));
         });
       });
-
-      // Step 2: If active, get text + Gemini
-      if (sessionType === "active" && tabInfo.id) {
-        try {
-          const [{ result }] = await chrome.scripting.executeScript({
-            target: { tabId: tabInfo.id },
-            func: () => document.body.innerText
-          });
-
-          const fullExtractedText = result;
-
-          console.log("[GEMINI] Extracted body text length:", result.length);
-          console.log("[GEMINI] Preview of body text:", result.slice(0, 100));
-
-          chrome.storage.local.set({ lastPageExtractedText: result });
-
-          const aiResult = await summarizeWithGemini({ url: tabInfo.url, title: tabInfo.title, bodyText: result });
-          console.log("[GEMINI] Full response text:", aiResult);
-
-          const topicMatch = aiResult.match(/Main Topic\s*[:\-]?\s*(.*)/i);
-          const bulletMatch = aiResult.match(/Key Points\s*[:\-]?\s*([\s\S]*?)Category/i);
-          const categoryMatch = aiResult.match(/Category\s*[:\-]?\s*(.*)/i);
-
-          const summaryTopic = topicMatch?.[1]?.trim() || "";
-          const summaryPoints = bulletMatch?.[1]?.trim().split("\n").filter(Boolean) || [];
-          const summaryCategory = categoryMatch?.[1]?.trim() || "";
-
-          chrome.storage.local.get(["focusSessions", "lastSessionUrl"], (result) => {
-            const sessions = result.focusSessions || [];
-            const updated = sessions.map((s) => {
-              if (s.url === result.lastSessionUrl) {
-                return {
-                  ...s,
-                  summaryTopic,
-                  summaryPoints,
-                  summaryCategory,
-                  fullExtractedText
-                };
-              } else {
-                return s;
-              }
-            });
-            chrome.storage.local.set({ focusSessions: updated }, () => {
-              console.log("[GEMINI] Session updated with summary:", summaryTopic);
-            });
-          });
-        } catch (e) {
-          console.error("[GEMINI] Summarization failed:", e);
-        }
-      }
     });
 
     activeStartTime = null;

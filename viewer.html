@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>FocusTrack Session Viewer</title>
+  <style>
+    body {
+      font-family: sans-serif;
+      margin: 2rem;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 1rem;
+    }
+    th, td {
+      border: 1px solid #ccc;
+      padding: 0.5rem;
+      text-align: left;
+      font-size: 0.9rem;
+    }
+    th {
+      background-color: #f4f4f4;
+    }
+    button {
+      margin-bottom: 1rem;
+      padding: 0.5rem 1rem;
+      font-size: 1rem;
+    }
+    .nowrap {
+      white-space: nowrap;
+    }
+  </style>
+</head>
+<body>
+  <h1>📊 FocusTrack Sessions</h1>
+  <button id="refreshBtn">🔄 Refresh</button>
+  <button id="downloadBtn">⬇️ Download JSON</button>
+  <table id="sessionTable">
+    <thead>
+      <tr>
+        <th>#</th>
+        <th>Start Time</th>
+        <th>End Time</th>
+        <th>Duration</th>
+        <th>Type</th>
+        <th>Domain</th>
+        <th>Title</th>
+        <th>Topic</th>
+        <th>Category</th>
+        <th>Mouse</th>
+        <th>Click</th>
+        <th>Key</th>
+        <th>canTrackActivity</th>
+        <th>URL</th>
+      </tr>
+    </thead>
+    <tbody></tbody>
+  </table>
+
+  <script>
+    function loadSessions() {
+        chrome.storage.local.get(['focusSessions'], (res) => {
+            const sessions = res.focusSessions || [];
+            if (!Array.isArray(sessions)) {
+            console.error("❌ focusSessions is not an array", sessions);
+            return;
+            }
+
+            console.log("📊 총 세션:", sessions.length);
+
+            const tbody = document.querySelector("#sessionTable tbody");
+            tbody.innerHTML = "";
+
+            sessions.forEach((s, i) => {
+            const row = document.createElement("tr");
+            row.innerHTML = `
+                <td>${i + 1}</td>
+                <td>${s.startTimeFormatted || "-"}</td>
+                <td>${s.endTimeFormatted || "-"}</td>
+                <td>${s.duration || "-"}</td>
+                <td>${s.sessionType || "-"}</td>
+                <td>${s.domain || "-"}</td>
+                <td>${s.title || "-"}</td>
+                <td>${s.summaryTopic || ""}</td>
+                <td>${s.summaryCategory || ""}</td>
+                <td>${s.eventCount?.mousemove ?? 0}</td>
+                <td>${s.eventCount?.click ?? 0}</td>
+                <td>${s.eventCount?.keydown ?? 0}</td>
+                <td>${s.canTrackActivity ? '✔️' : '❌'}</td>
+                <td><a href="${s.url}" target="_blank">🔗</a></td>
+            `;
+            tbody.appendChild(row);
+            });
+        });
+}
+
+    function loadSessions() {
+      chrome.storage.local.get(null, (res) => {
+        console.log("📦 All storage keys:", Object.keys(res));
+        const sessions = res.focusSessions || [];
+        logAndRender(sessions);
+      });
+    }
+
+    document.addEventListener("DOMContentLoaded", () => {
+      loadSessions();
+
+      document.getElementById("refreshBtn").addEventListener("click", () => {
+        loadSessions();
+      });
+
+      document.getElementById("downloadBtn").addEventListener("click", () => {
+        chrome.storage.local.get(["focusSessions"], (res) => {
+          const blob = new Blob([JSON.stringify(res.focusSessions || [], null, 2)], {
+            type: "application/json"
+          });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement("a");
+          a.href = url;
+          a.download = "focusSessions.json";
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+        });
+      });
+    });
+  </script>
+</body>
+</html>
+
