@@ -18,7 +18,7 @@ function generateUUID() {
   return crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.floor(Math.random() * 1e9)}`;
 }
 
-// Gemini API 요약 함수는 그대로 유지
+// Gemini API 요약 함수
 async function summarizeWithGemini({ url, title, bodyText }) {
   try {
     const GEMINI_API_KEY = "AIzaSyCsfpWTHI36q2CI-1BQqc95WXN38kTPv1A";
@@ -95,7 +95,8 @@ async function updateSessionInFirebase(session) {
       summaryTopic: session.summaryTopic,
       summaryPoints: session.summaryPoints,
       summaryCategory: session.summaryCategory,
-      segments: session.segments
+      segments: session.segments,
+      images: session.images || [] // 이미지 정보 추가
     });
     
     console.log("[FIREBASE] Session updated:", session.firebaseId);
@@ -103,6 +104,81 @@ async function updateSessionInFirebase(session) {
   } catch (error) {
     console.error("[FIREBASE] Error updating session:", error);
     return false;
+  }
+}
+
+// AI 요약 및 이미지 추출 함수 (재시도 로직 포함)
+async function extractContentAndSummarize(tabId, url, title) {
+  let attempts = 0;
+  const maxAttempts = 3;
+  
+  while (attempts < maxAttempts) {
+    try {
+      // 텍스트 및 이미지 추출
+      const [{ result }] = await chrome.scripting.executeScript({
+        target: { tabId: tabId },
+        func: () => {
+          // 텍스트 추출
+          const bodyText = document.body.innerText;
+          
+          // 중요 이미지 추출 (최소 크기 이상인 이미지만)
+          const images = Array.from(document.querySelectorAll('img')).filter(img => {
+            // 이미지가 표시되어 있고 최소 크기 이상인 것만 필터링
+            const rect = img.getBoundingClientRect();
+            return img.src && 
+                  rect.width >= 200 && 
+                  rect.height >= 150 && 
+                  img.src.startsWith('http') && // 유효한 URL만
+                  !img.src.includes('data:'); // base64 이미지 제외
+          }).slice(0, 5).map(img => ({ // 상위 5개만 저장
+            url: img.src,
+            alt: img.alt || '',
+            width: img.width,
+            height: img.height
+          }));
+          
+          return { bodyText, images };
+        }
+      });
+      
+      const fullText = result.bodyText;
+      const pageImages = result.images || [];
+      
+      // Gemini API 호출
+      const aiResult = await summarizeWithGemini({ 
+        url: url, 
+        title: title, 
+        bodyText: fullText 
+      });
+      
+      const topicMatch = aiResult.match(/Main Topic\s*[:\-]?\s*(.*)/i);
+      const bulletMatch = aiResult.match(/Key Points\s*[:\-]?\s*([\s\S]*?)Category/i);
+      const categoryMatch = aiResult.match(/Category\s*[:\-]?\s*(.*)/i);
+      
+      return {
+        success: true,
+        fullText,
+        images: pageImages,
+        summary: {
+          topic: topicMatch?.[1]?.trim() || "",
+          points: bulletMatch?.[1]?.trim().split("\n").filter(Boolean) || [],
+          category: categoryMatch?.[1]?.trim() || ""
+        }
+      };
+    } catch (error) {
+      attempts++;
+      console.error(`[EXTRACT] Attempt ${attempts} failed:`, error);
+      
+      if (attempts >= maxAttempts) {
+        return {
+          success: false,
+          error: error.message || "Unknown error"
+        };
+      }
+      
+      // 재시도 전 대기
+      await new Promise(resolve => setTimeout(resolve, 2000));
+    }
   }
 }
 
@@ -163,24 +239,23 @@ setInterval(() => {
           last.eventCount.keydown += eventCounter.keydown;
           last.segments.push({ start: startTime, end: endTime });
 
-          // 병합 후 active 조건 충족 시 AI 호출
+          // 병합 후 active 조건 충족 시 AI 호출 및 이미지 추출
           if (last.sessionType === "inactive" && last.duration >= ACTIVE_SESSION_THRESHOLD / 1000) {
             last.sessionType = "active";
-            try {
-              const [{ result }] = await chrome.scripting.executeScript({
-                target: { tabId: tabInfo.id },
-                func: () => document.body.innerText
-              });
-              const fullText = result;
-              const aiResult = await summarizeWithGemini({ url: tabInfo.url, title: tabInfo.title, bodyText: fullText });
-
-              const topicMatch = aiResult.match(/Main Topic\s*[:\-]?\s*(.*)/i);
-              const bulletMatch = aiResult.match(/Key Points\s*[:\-]?\s*([\s\S]*?)Category/i);
-              const categoryMatch = aiResult.match(/Category\s*[:\-]?\s*(.*)/i);
-
-              last.summaryTopic = topicMatch?.[1]?.trim() || "";
-              last.summaryPoints = bulletMatch?.[1]?.trim().split("\n").filter(Boolean) || [];
-              last.summaryCategory = categoryMatch?.[1]?.trim() || "";
+            
+            // 콘텐츠 추출 및 AI 요약
+            const contentResult = await extractContentAndSummarize(
+              tabInfo.id,
+              tabInfo.url,
+              tabInfo.title
+            );
+            
+            if (contentResult.success) {
+              // 세션 업데이트
+              last.images = contentResult.images;
+              last.summaryTopic = contentResult.summary.topic;
+              last.summaryPoints = contentResult.summary.points;
+              last.summaryCategory = contentResult.summary.category;
               
               // Firebase에 업데이트
               if (last.firebaseId) {
@@ -188,10 +263,11 @@ setInterval(() => {
               } else {
                 last.firebaseId = await saveSessionToFirebase(last);
               }
-
+              
               console.log("[GEMINI] Updated merged session:", last.id);
-            } catch (e) {
-              console.error("[GEMINI] Summarization failed (merged session):", e);
+              console.log("[IMAGES] Extracted images:", contentResult.images.length);
+            } else {
+              console.error("[EXTRACT] Failed to extract content:", contentResult.error);
             }
           } else {
             // Firebase에 병합된 세션 업데이트
@@ -202,6 +278,7 @@ setInterval(() => {
 
           session = last;
         } else {
+          // 새 세션 생성
           session = {
             id: generateUUID(),
             startTime,
@@ -218,43 +295,35 @@ setInterval(() => {
             summaryTopic: "",
             summaryPoints: [],
             summaryCategory: "",
-            segments: [{ start: startTime, end: endTime }]
+            segments: [{ start: startTime, end: endTime }],
+            images: [] // 이미지 배열 추가
           };
-
+          
+          // Active 세션인 경우 AI 요약 및 이미지 추출 진행
+          if (sessionType === "active" && tabInfo.id) {
+            // 콘텐츠 추출 및 AI 요약
+            const contentResult = await extractContentAndSummarize(
+              tabInfo.id,
+              tabInfo.url,
+              tabInfo.title
+            );
+            
+            if (contentResult.success) {
+              // 세션 업데이트
+              session.images = contentResult.images;
+              session.summaryTopic = contentResult.summary.topic;
+              session.summaryPoints = contentResult.summary.points;
+              session.summaryCategory = contentResult.summary.category;
+            } else {
+              console.error("[EXTRACT] Failed to extract content:", contentResult.error);
+            }
+          }
+          
           // 새 세션 저장 - Firebase에 먼저 저장
           session.firebaseId = await saveSessionToFirebase(session);
           
           // 로컬 스토리지에도 저장
           sessions.push(session);
-
-          // Active 세션인 경우 AI 요약 진행
-          if (sessionType === "active" && tabInfo.id) {
-            try {
-              const [{ result }] = await chrome.scripting.executeScript({
-                target: { tabId: tabInfo.id },
-                func: () => document.body.innerText
-              });
-              const fullText = result;
-              const aiResult = await summarizeWithGemini({ url: tabInfo.url, title: tabInfo.title, bodyText: fullText });
-
-              const topicMatch = aiResult.match(/Main Topic\s*[:\-]?\s*(.*)/i);
-              const bulletMatch = aiResult.match(/Key Points\s*[:\-]?\s*([\s\S]*?)Category/i);
-              const categoryMatch = aiResult.match(/Category\s*[:\-]?\s*(.*)/i);
-
-              session.summaryTopic = topicMatch?.[1]?.trim() || "";
-              session.summaryPoints = bulletMatch?.[1]?.trim().split("\n").filter(Boolean) || [];
-              session.summaryCategory = categoryMatch?.[1]?.trim() || "";
-              
-              // Firebase에 업데이트된 정보 저장
-              if (session.firebaseId) {
-                await updateSessionInFirebase(session);
-              }
-
-              console.log("[GEMINI] Updated session with summary:", session.summaryTopic);
-            } catch (e) {
-              console.error("[GEMINI] Summarization failed (new session):", e);
-            }
-          }
         }
 
         // 로컬 스토리지 업데이트
