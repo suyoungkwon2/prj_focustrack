@@ -3,130 +3,209 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>FocusTrack Session Viewer</title>
+  <title>FocusTrack Sessions</title>
   <style>
+    /* 기존 CSS 유지 */
     body {
       font-family: sans-serif;
-      margin: 2rem;
+      padding: 2rem;
+      background-color: #f7f7f7;
+    }
+    h1 {
+      font-size: 24px;
+      margin-bottom: 1rem;
     }
     table {
       width: 100%;
       border-collapse: collapse;
-      margin-top: 1rem;
+      background-color: white;
+      box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
     }
     th, td {
-      border: 1px solid #ccc;
-      padding: 0.5rem;
+      border: 1px solid #ddd;
+      padding: 8px;
       text-align: left;
-      font-size: 0.9rem;
     }
     th {
-      background-color: #f4f4f4;
+      background-color: #f0f0f0;
+    }
+    .controls {
+      margin-bottom: 1rem;
     }
     button {
-      margin-bottom: 1rem;
       padding: 0.5rem 1rem;
-      font-size: 1rem;
+      margin-right: 0.5rem;
+      cursor: pointer;
     }
-    .nowrap {
-      white-space: nowrap;
+    .active {
+      color: green;
+      font-weight: bold;
+    }
+    .inactive {
+      color: gray;
+    }
+    .loader {
+      border: 4px solid #f3f3f3;
+      border-top: 4px solid #3498db;
+      border-radius: 50%;
+      width: 30px;
+      height: 30px;
+      animation: spin 2s linear infinite;
+      display: inline-block;
+      margin-left: 10px;
+    }
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+    .data-source {
+      margin-bottom: 10px;
     }
   </style>
 </head>
 <body>
   <h1>📊 FocusTrack Sessions</h1>
-  <button id="refreshBtn">🔄 Refresh</button>
-  <button id="downloadBtn">⬇️ Download JSON</button>
+  
+  <div class="data-source">
+    <label>
+      <input type="radio" name="dataSource" value="local" checked> 로컬 데이터
+    </label>
+    <label>
+      <input type="radio" name="dataSource" value="firebase"> Firebase 데이터
+    </label>
+  </div>
+  
+  <div class="controls">
+    <button onclick="refreshSessions()">↻ Refresh <span id="loading" class="loader" style="display: none;"></span></button>
+    <button onclick="downloadJSON()">⭳ Download JSON</button>
+  </div>
+  
   <table id="sessionTable">
     <thead>
       <tr>
         <th>#</th>
-        <th>Start Time</th>
-        <th>End Time</th>
-        <th>Duration</th>
-        <th>Type</th>
+        <th>Start</th>
+        <th>End</th>
+        <th>Duration (s)</th>
+        <th>Status</th>
         <th>Domain</th>
-        <th>Title</th>
         <th>Topic</th>
         <th>Category</th>
-        <th>Mouse</th>
-        <th>Click</th>
-        <th>Key</th>
-        <th>canTrackActivity</th>
+        <th>Title</th>
         <th>URL</th>
       </tr>
     </thead>
     <tbody></tbody>
   </table>
 
-  <script>
-    function loadSessions() {
-        chrome.storage.local.get(['focusSessions'], (res) => {
-            const sessions = res.focusSessions || [];
-            if (!Array.isArray(sessions)) {
-            console.error("❌ focusSessions is not an array", sessions);
-            return;
-            }
-
-            console.log("📊 총 세션:", sessions.length);
-
-            const tbody = document.querySelector("#sessionTable tbody");
-            tbody.innerHTML = "";
-
-            sessions.forEach((s, i) => {
-            const row = document.createElement("tr");
-            row.innerHTML = `
-                <td>${i + 1}</td>
-                <td>${s.startTimeFormatted || "-"}</td>
-                <td>${s.endTimeFormatted || "-"}</td>
-                <td>${s.duration || "-"}</td>
-                <td>${s.sessionType || "-"}</td>
-                <td>${s.domain || "-"}</td>
-                <td>${s.title || "-"}</td>
-                <td>${s.summaryTopic || ""}</td>
-                <td>${s.summaryCategory || ""}</td>
-                <td>${s.eventCount?.mousemove ?? 0}</td>
-                <td>${s.eventCount?.click ?? 0}</td>
-                <td>${s.eventCount?.keydown ?? 0}</td>
-                <td>${s.canTrackActivity ? '✔️' : '❌'}</td>
-                <td><a href="${s.url}" target="_blank">🔗</a></td>
-            `;
-            tbody.appendChild(row);
-            });
+  <script type="module">
+    import { db, collection, getDocs } from './firebase-config.js';
+    
+    window.refreshSessions = async function() {
+      const loader = document.getElementById('loading');
+      loader.style.display = 'inline-block';
+      
+      const dataSource = document.querySelector('input[name="dataSource"]:checked').value;
+      
+      try {
+        let sessions = [];
+        
+        if (dataSource === 'local') {
+          sessions = await loadLocalSessions();
+        } else {
+          sessions = await loadFirebaseSessions();
+        }
+        
+        populateTable(sessions);
+      } catch (error) {
+        console.error("Error loading sessions:", error);
+        alert("Failed to load sessions. See console for details.");
+      } finally {
+        loader.style.display = 'none';
+      }
+    };
+    
+    window.downloadJSON = async function() {
+      const dataSource = document.querySelector('input[name="dataSource"]:checked').value;
+      let sessions = [];
+      
+      if (dataSource === 'local') {
+        sessions = await loadLocalSessions();
+      } else {
+        sessions = await loadFirebaseSessions();
+      }
+      
+      const blob = new Blob([JSON.stringify(sessions, null, 2)], {
+        type: 'application/json'
+      });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `focusSessions_${dataSource}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    };
+    
+    async function loadLocalSessions() {
+      return new Promise(resolve => {
+        chrome.storage.local.get(['focusSessions'], result => {
+          resolve(result.focusSessions || []);
         });
-}
-
-    function loadSessions() {
-      chrome.storage.local.get(null, (res) => {
-        console.log("📦 All storage keys:", Object.keys(res));
-        const sessions = res.focusSessions || [];
-        logAndRender(sessions);
       });
     }
-
-    document.addEventListener("DOMContentLoaded", () => {
-      loadSessions();
-
-      document.getElementById("refreshBtn").addEventListener("click", () => {
-        loadSessions();
+    
+    async function loadFirebaseSessions() {
+      const sessionsSnapshot = await getDocs(collection(db, "focusSessions"));
+      const sessions = [];
+      
+      sessionsSnapshot.forEach(doc => {
+        const data = doc.data();
+        data.firebaseId = doc.id; // Firebase 문서 ID 저장
+        sessions.push(data);
       });
-
-      document.getElementById("downloadBtn").addEventListener("click", () => {
-        chrome.storage.local.get(["focusSessions"], (res) => {
-          const blob = new Blob([JSON.stringify(res.focusSessions || [], null, 2)], {
-            type: "application/json"
-          });
-          const url = URL.createObjectURL(blob);
-          const a = document.createElement("a");
-          a.href = url;
-          a.download = "focusSessions.json";
-          document.body.appendChild(a);
-          a.click();
-          document.body.removeChild(a);
-        });
+      
+      // 시간 순으로 정렬
+      return sessions.sort((a, b) => b.startTime - a.startTime);
+    }
+    
+    function populateTable(sessions) {
+      const tbody = document.querySelector("#sessionTable tbody");
+      tbody.innerHTML = "";
+      
+      if (sessions.length === 0) {
+        const row = document.createElement("tr");
+        row.innerHTML = `<td colspan="10" style="text-align: center;">No sessions found</td>`;
+        tbody.appendChild(row);
+        return;
+      }
+      
+      sessions.forEach((s, i) => {
+        const row = document.createElement("tr");
+        row.innerHTML = `
+          <td>${i + 1}</td>
+          <td>${s.startTimeFormatted || '-'}</td>
+          <td>${s.endTimeFormatted || '-'}</td>
+          <td>${s.duration}</td>
+          <td class="${s.sessionType === 'active' ? 'active' : 'inactive'}">${s.sessionType}</td>
+          <td>${s.domain}</td>
+          <td>${s.summaryTopic || '-'}</td>
+          <td>${s.summaryCategory || '-'}</td>
+          <td>${s.title}</td>
+          <td><a href="${s.url}" target="_blank">Link</a></td>
+        `;
+        tbody.appendChild(row);
       });
+    }
+    
+    // 페이지 로드 시 세션 불러오기
+    document.addEventListener('DOMContentLoaded', refreshSessions);
+    
+    // 데이터 소스 변경 시 새로고침
+    document.querySelectorAll('input[name="dataSource"]').forEach(radio => {
+      radio.addEventListener('change', refreshSessions);
     });
   </script>
 </body>
 </html>
-
