@@ -1,4 +1,5 @@
-// background.js (정제된 안정버전 + Gemini 요약 기능 포함)
+// background.js
+import { db, collection, addDoc, doc, updateDoc } from './firebase-config.js';
 
 let lastActivityTime = Date.now();
 let activeStartTime = null;
@@ -17,9 +18,10 @@ function generateUUID() {
   return crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.floor(Math.random() * 1e9)}`;
 }
 
+// Gemini API 요약 함수는 그대로 유지
 async function summarizeWithGemini({ url, title, bodyText }) {
   try {
-    const GEMINI_API_KEY = "AIzaSyCsfpWTHI36q2CI-1BQqc95WXN38kTPv1A"; // Gemini 2.0 Flash
+    const GEMINI_API_KEY = "AIzaSyCsfpWTHI36q2CI-1BQqc95WXN38kTPv1A";
     const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`;
 
     const prompt = `You are an assistant that analyzes web pages for user focus tracking.\n\nBased on the following webpage information — including the URL, title, and full document body text — perform the following tasks:\n\n1. Main Topic: [Summarize the main topic of the webpage in one concise sentence]\n\n2. Key Points: [Provide 3 to 5 bullet points]\n\n3. Category: [Choose one of: Growth / Productivity / Daily Life / Entertainment]\n\n---\nURL: ${url}\nTitle: ${title}\nContent:\n${bodyText.slice(0, 10000)}`;
@@ -42,6 +44,65 @@ async function summarizeWithGemini({ url, title, bodyText }) {
   } catch (error) {
     console.error("[GEMINI] API call failed:", error);
     return "[Gemini API error]";
+  }
+}
+
+// Firebase에 세션 저장 함수
+async function saveSessionToFirebase(session) {
+  try {
+    // 문서 ID 자동 생성을 위해 addDoc 사용
+    const docRef = await addDoc(collection(db, "focusSessions"), session);
+    console.log("[FIREBASE] Session saved with ID:", docRef.id);
+    
+    // Firebase 문서 ID를 세션에 저장 (업데이트 용도)
+    session.firebaseId = docRef.id;
+    
+    // 로컬 스토리지에도 Firebase ID 저장 (선택사항)
+    chrome.storage.local.get(["focusSessions"], (res) => {
+      const sessions = res.focusSessions || [];
+      const sessionIndex = sessions.findIndex(s => s.id === session.id);
+      if (sessionIndex !== -1) {
+        sessions[sessionIndex].firebaseId = docRef.id;
+        chrome.storage.local.set({ focusSessions: sessions });
+      }
+    });
+    
+    return docRef.id;
+  } catch (error) {
+    console.error("[FIREBASE] Error saving session:", error);
+    return null;
+  }
+}
+
+// Firebase 세션 업데이트 함수
+async function updateSessionInFirebase(session) {
+  if (!session.firebaseId) {
+    console.error("[FIREBASE] Cannot update session without firebaseId");
+    return false;
+  }
+  
+  try {
+    // firebaseId를 사용하여 문서 참조 생성
+    const sessionRef = doc(db, "focusSessions", session.firebaseId);
+    
+    // 세션 데이터로 문서 업데이트
+    await updateDoc(sessionRef, {
+      endTime: session.endTime,
+      endTimeFormatted: session.endTimeFormatted,
+      duration: session.duration,
+      sessionType: session.sessionType,
+      eventCount: session.eventCount,
+      summaryTopic: session.summaryTopic,
+      summaryPoints: session.summaryPoints,
+      summaryCategory: session.summaryCategory,
+      segments: session.segments
+    });
+    
+    console.log("[FIREBASE] Session updated:", session.firebaseId);
+    return true;
+  } catch (error) {
+    console.error("[FIREBASE] Error updating session:", error);
+    return false;
   }
 }
 
@@ -120,11 +181,22 @@ setInterval(() => {
               last.summaryTopic = topicMatch?.[1]?.trim() || "";
               last.summaryPoints = bulletMatch?.[1]?.trim().split("\n").filter(Boolean) || [];
               last.summaryCategory = categoryMatch?.[1]?.trim() || "";
-              last.fullExtractedText = fullText;
+              
+              // Firebase에 업데이트
+              if (last.firebaseId) {
+                await updateSessionInFirebase(last);
+              } else {
+                last.firebaseId = await saveSessionToFirebase(last);
+              }
 
               console.log("[GEMINI] Updated merged session:", last.id);
             } catch (e) {
               console.error("[GEMINI] Summarization failed (merged session):", e);
+            }
+          } else {
+            // Firebase에 병합된 세션 업데이트
+            if (last.firebaseId) {
+              await updateSessionInFirebase(last);
             }
           }
 
@@ -146,13 +218,16 @@ setInterval(() => {
             summaryTopic: "",
             summaryPoints: [],
             summaryCategory: "",
-            fullExtractedText: "",
             segments: [{ start: startTime, end: endTime }]
           };
 
+          // 새 세션 저장 - Firebase에 먼저 저장
+          session.firebaseId = await saveSessionToFirebase(session);
+          
+          // 로컬 스토리지에도 저장
           sessions.push(session);
-          console.log("[STORAGE] New session added:", session.id);
 
+          // Active 세션인 경우 AI 요약 진행
           if (sessionType === "active" && tabInfo.id) {
             try {
               const [{ result }] = await chrome.scripting.executeScript({
@@ -169,7 +244,11 @@ setInterval(() => {
               session.summaryTopic = topicMatch?.[1]?.trim() || "";
               session.summaryPoints = bulletMatch?.[1]?.trim().split("\n").filter(Boolean) || [];
               session.summaryCategory = categoryMatch?.[1]?.trim() || "";
-              session.fullExtractedText = fullText;
+              
+              // Firebase에 업데이트된 정보 저장
+              if (session.firebaseId) {
+                await updateSessionInFirebase(session);
+              }
 
               console.log("[GEMINI] Updated session with summary:", session.summaryTopic);
             } catch (e) {
@@ -178,6 +257,7 @@ setInterval(() => {
           }
         }
 
+        // 로컬 스토리지 업데이트
         chrome.storage.local.set({ focusSessions: sessions }, () => {
           console.log("[STORAGE] Sessions saved. Total:", sessions.length);
           console.log("[SESSION PREVIEW]", JSON.stringify(session, null, 2));
