@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>FocusTrack Sessions</title>
   <style>
+    /* 기존 CSS 유지 */
     body {
       font-family: sans-serif;
       padding: 2rem;
@@ -43,14 +44,42 @@
     .inactive {
       color: gray;
     }
+    .loader {
+      border: 4px solid #f3f3f3;
+      border-top: 4px solid #3498db;
+      border-radius: 50%;
+      width: 30px;
+      height: 30px;
+      animation: spin 2s linear infinite;
+      display: inline-block;
+      margin-left: 10px;
+    }
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+    .data-source {
+      margin-bottom: 10px;
+    }
   </style>
 </head>
 <body>
   <h1>📊 FocusTrack Sessions</h1>
+  
+  <div class="data-source">
+    <label>
+      <input type="radio" name="dataSource" value="local" checked> 로컬 데이터
+    </label>
+    <label>
+      <input type="radio" name="dataSource" value="firebase"> Firebase 데이터
+    </label>
+  </div>
+  
   <div class="controls">
-    <button onclick="refreshSessions()">↻ Refresh</button>
+    <button onclick="refreshSessions()">↻ Refresh <span id="loading" class="loader" style="display: none;"></span></button>
     <button onclick="downloadJSON()">⭳ Download JSON</button>
   </div>
+  
   <table id="sessionTable">
     <thead>
       <tr>
@@ -69,18 +98,89 @@
     <tbody></tbody>
   </table>
 
-  <script>
-    async function loadSessions() {
+  <script type="module">
+    import { db, collection, getDocs } from './firebase-config.js';
+    
+    window.refreshSessions = async function() {
+      const loader = document.getElementById('loading');
+      loader.style.display = 'inline-block';
+      
+      const dataSource = document.querySelector('input[name="dataSource"]:checked').value;
+      
+      try {
+        let sessions = [];
+        
+        if (dataSource === 'local') {
+          sessions = await loadLocalSessions();
+        } else {
+          sessions = await loadFirebaseSessions();
+        }
+        
+        populateTable(sessions);
+      } catch (error) {
+        console.error("Error loading sessions:", error);
+        alert("Failed to load sessions. See console for details.");
+      } finally {
+        loader.style.display = 'none';
+      }
+    };
+    
+    window.downloadJSON = async function() {
+      const dataSource = document.querySelector('input[name="dataSource"]:checked').value;
+      let sessions = [];
+      
+      if (dataSource === 'local') {
+        sessions = await loadLocalSessions();
+      } else {
+        sessions = await loadFirebaseSessions();
+      }
+      
+      const blob = new Blob([JSON.stringify(sessions, null, 2)], {
+        type: 'application/json'
+      });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `focusSessions_${dataSource}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    };
+    
+    async function loadLocalSessions() {
       return new Promise(resolve => {
         chrome.storage.local.get(['focusSessions'], result => {
           resolve(result.focusSessions || []);
         });
       });
     }
-
+    
+    async function loadFirebaseSessions() {
+      const sessionsSnapshot = await getDocs(collection(db, "focusSessions"));
+      const sessions = [];
+      
+      sessionsSnapshot.forEach(doc => {
+        const data = doc.data();
+        data.firebaseId = doc.id; // Firebase 문서 ID 저장
+        sessions.push(data);
+      });
+      
+      // 시간 순으로 정렬
+      return sessions.sort((a, b) => b.startTime - a.startTime);
+    }
+    
     function populateTable(sessions) {
       const tbody = document.querySelector("#sessionTable tbody");
       tbody.innerHTML = "";
+      
+      if (sessions.length === 0) {
+        const row = document.createElement("tr");
+        row.innerHTML = `<td colspan="10" style="text-align: center;">No sessions found</td>`;
+        tbody.appendChild(row);
+        return;
+      }
+      
       sessions.forEach((s, i) => {
         const row = document.createElement("tr");
         row.innerHTML = `
@@ -98,29 +198,14 @@
         tbody.appendChild(row);
       });
     }
-
-    async function refreshSessions() {
-      const sessions = await loadSessions();
-      populateTable(sessions);
-    }
-
-    function downloadJSON() {
-      chrome.storage.local.get(['focusSessions'], result => {
-        const blob = new Blob([JSON.stringify(result.focusSessions, null, 2)], {
-          type: 'application/json'
-        });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = 'focusSessions.json';
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-      });
-    }
-
-    refreshSessions();
+    
+    // 페이지 로드 시 세션 불러오기
+    document.addEventListener('DOMContentLoaded', refreshSessions);
+    
+    // 데이터 소스 변경 시 새로고침
+    document.querySelectorAll('input[name="dataSource"]').forEach(radio => {
+      radio.addEventListener('change', refreshSessions);
+    });
   </script>
 </body>
 </html>
