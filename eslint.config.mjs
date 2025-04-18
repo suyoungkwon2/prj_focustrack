@@ -15,25 +15,18 @@ export default [
             globals: {
                 ...globals.browser,
                 ...globals.es2021,
-                chrome: 'readonly'
+                ...globals.node,
+                chrome: 'readonly',
+                process: 'readonly'
             }
         },
         rules: {
-            'no-console': 'warn',
+            'no-console': 'off',
             'no-unused-vars': 'warn',
             'no-undef': 'error',
             'semi': ['error', 'always'],
-            'quotes': ['error', 'single']
-        }
-    },
-
-    // 3. Node.js 스크립트를 위한 설정
-    {
-        files: ["build.js"],
-        languageOptions: {
-            globals: {
-                ...globals.node
-            }
+            'quotes': ['error', 'single', { 'avoidEscape': true }],
+            'no-useless-escape': 'off'
         }
     }
 ];
