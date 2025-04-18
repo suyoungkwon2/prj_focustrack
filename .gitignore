@@ -24,3 +24,14 @@ yarn-error.log*
 # OS generated files
 .DS_Store
 Thumbs.db
+
+# 환경 변수 파일
+.env
+.env.development
+.env.production
+.env.local
+
+# 기타
+node_modules/
+*.zip
+.DS_Store
