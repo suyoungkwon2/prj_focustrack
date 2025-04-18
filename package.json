@@ -4,7 +4,7 @@
     "description": "Tracks Browse and focus sessions",
     "private": true,
     "scripts": {
-        "lint": "eslint . --ext .js",
+        "lint": "eslint .",
         "build": "node build.js",
         "test": "echo \"Error: no test specified\" && exit 1"
     },
