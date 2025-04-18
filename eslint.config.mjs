@@ -13,18 +13,23 @@ export default [
 
   // 3. 프로젝트 전반적인 설정 (언어 옵션, 전역 변수 등)
   {
-    files: ["**/*.{js,mjs,cjs,jsx}"], // 이 설정이 적용될 파일들
+    files: ["**/*.js"],
     languageOptions: {
+      ecmaVersion: 2022,
+      sourceType: 'module',
       globals: {
-        ...globals.browser, // 브라우저 환경의 전역 변수들 (window, document 등)
-        chrome: "readonly" // Chrome 확장 프로그램 API (chrome.*) 전역 변수 추가
+        ...globals.browser,
+        ...globals.es2021,
+        chrome: 'readonly'
       }
     },
-    // 여기에 프로젝트 전체에 적용할 규칙 오버라이드 등을 추가할 수 있습니다.
-    // 예시:
-    // rules: {
-    //   "no-unused-vars": "warn"
-    // }
+    rules: {
+      'no-console': 'warn',
+      'no-unused-vars': 'warn',
+      'no-undef': 'error',
+      'semi': ['error', 'always'],
+      'quotes': ['error', 'single']
+    }
   },
 
   // 4. 특정 파일(예: Node.js 스크립트)을 위한 별도 설정 (선택 사항)

@@ -1,6 +1,6 @@
 // build.js
 const fs = require('fs-extra'); // 파일/폴더 작업용 라이브러리
-const zipper = require('zip-local'); // 폴더 압축 라이브러리
+const archiver = require('archiver'); // 압축 라이브러리
 const path = require('path'); // 경로 관련 작업용 내장 모듈
 const manifest = require('./manifest.json'); // manifest 파일 로드 (버전 정보 등 활용 가능)
 
@@ -15,6 +15,7 @@ const FILES_TO_INCLUDE = [
     'content.js',
     'viewer.html',
     'firebase-config.js',
+    'icon.png',
     // 아이콘, 이미지, 스타일시트 등 필요한 다른 리소스 파일/폴더 경로 추가
     // 예: 'icons/', 'images/', 'styles/'
 ];
@@ -40,20 +41,24 @@ async function buildExtension() {
             }
         }
 
-        // --- ★★★ 중요: API 키 보안 경고 ★★★ ---
-        // 현재 방식으로는 firebase-config.js 와 background.js 에 포함된 API 키들이
-        // 빌드 결과물(.zip 파일)에 그대로 포함됩니다. 이는 매우 심각한 보안 문제입니다.
-        // 이 키들이 유출되면 악의적인 사용으로 이어질 수 있습니다.
-        // CI/CD 적용 전에 반드시 이 문제를 해결해야 합니다. (예: 백엔드 프록시 사용)
-        console.warn(`[BUILD] ★★★ SECURITY WARNING ★★★: API keys are likely included in the build output!`);
-        console.warn(`[BUILD] Review and implement secure API key handling (e.g., using a backend proxy) before deploying.`);
-        // [빌드] ★★★ 보안 경고 ★★★: API 키가 빌드 결과물에 포함될 가능성이 높습니다!
-        // [빌드] 배포 전에 안전한 API 키 처리 방식(예: 백엔드 프록시 사용)을 검토하고 구현하십시오.
-
         // 3. dist 폴더를 .zip 파일로 압축
         console.log(`[BUILD] Zipping dist directory to ${ZIP_PATH}...`); // [빌드] dist 디렉토리를 {압축 파일 경로}로 압축 중...
-        await zipper.sync.zip(DIST_DIR).compress().save(ZIP_PATH);
-        console.log(`[BUILD] Successfully created zip file: ${ZIP_FILENAME}`); // [빌드] zip 파일 생성 성공: {압축 파일 이름}
+        const output = fs.createWriteStream(ZIP_PATH);
+        const archive = archiver('zip', {
+            zlib: { level: 9 }
+        });
+
+        output.on('close', () => {
+            console.log(`[BUILD] Successfully created zip file: ${ZIP_FILENAME}`); // [빌드] zip 파일 생성 성공: {압축 파일 이름}
+        });
+
+        archive.on('error', (err) => {
+            throw err;
+        });
+
+        archive.pipe(output);
+        archive.directory(DIST_DIR, false);
+        await archive.finalize();
 
     } catch (error) {
         console.error('[BUILD] Build failed:', error); // [빌드] 빌드 실패:
