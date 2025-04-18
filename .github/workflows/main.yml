@@ -28,7 +28,7 @@ jobs:
           cache: 'npm' # npm 의존성 캐싱 설정으로 설치 속도 향상
 
       - name: Install dependencies # 3. 의존성 설치
-        run: npm ci # package-lock.json 또는 npm-shrinkwrap.json 기반으로 정확하고 빠르게 설치
+        run: npm install
 
       - name: Lint code # 4. 코드 린팅 실행 (ESLint 설정 필요)
         run: npm run lint # package.json의 "lint" 스크립트 실행
