@@ -70,7 +70,42 @@ async function summarizeWithGemini({ url, title, bodyText }) {
     const GEMINI_API_KEY = "AIzaSyCsfpWTHI36q2CI-1BQqc95WXN38kTPv1A";
     const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`;
 
-    const prompt = `You are an assistant that analyzes web pages for user focus tracking.\n\nBased on the following webpage information — including the URL, title, and full document body text — perform the following tasks:\n\n1. Main Topic: [Summarize the main topic of the webpage in one concise sentence]\n\n2. Key Points: [Provide 3 to 5 bullet points]\n\n3. Category: [Choose one of: Growth / Productivity / Daily Life / Entertainment]\n\n---\nURL: ${url}\nTitle: ${title}\nContent:\n${bodyText.slice(0, 10000)}`;
+    const prompt = `
+You are a web analysis assistant for a user focus tracking system.
+
+Given a web page's metadata and body content (including potential noise or non-essential information), complete the following tasks with careful judgment:
+
+---
+
+Instructions:
+
+1. Main Topic  
+Summarize the main topic of the webpage in one concise and informative sentence**. Focus on the page's **core purpose and content, filtering out advertisements, navigation elements, or unrelated filler content.
+
+2. Key Points  
+Extract 3 to 5 bullet points highlighting the most important ideas, facts, or messages. Ignore irrelevant or repetitive sections.
+
+3. Category Classification
+Classify the page into one of the following three categories, based on both the content and the user's apparent intent:
+
+- Growth: For learning, research, news, articles, professional knowledge, or educational purposes.  
+  _e.g. Reading news articles, watching science lectures on YouTube, researching books or academic topics._
+
+- Daily Life: For managing personal tasks, logistics, or everyday necessities.  
+  _e.g. Grocery shopping, checking maps, browsing recipes, looking up local services._
+
+- Entertainment: For fun, leisure, and pleasure-driven content.  
+  _e.g. Watching variety shows, music streaming, playing games, or browsing meme sites._
+
+📌 Note: If the URL suggests a generic platform (e.g. YouTube, Amazon), always analyze the actual content and context before assigning a category.
+
+---
+
+URL: ${url}  
+Title: ${title}  
+Content:  
+${bodyText.slice(0, 10000)}
+`;
 
     const response = await fetch(endpoint, {
       method: "POST",
