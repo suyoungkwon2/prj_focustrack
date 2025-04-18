@@ -6,16 +6,20 @@ name: FocusTrack CI # 워크플로우 이름
 on:
   push:
     branches:
-      - '**' # 모든 브랜치 ('**'는 모든 것을 의미) 에 push 될 때 실행
+      - 'main'
+      - 'develop'
+      - 'feature/*'
   pull_request:
     branches:
-      - '**' # 모든 브랜치를 대상으로 하는 Pull Request 발생 시 실행 (생성, 업데이트 등)
+      - 'main'
+      - 'develop'
   workflow_dispatch: # GitHub Actions 탭에서 수동으로 실행 가능
 
 jobs:
   build-and-lint: # 작업(Job) ID (이름 변경 가능)
     name: Build and Lint Extension # 작업 이름 (GitHub Actions UI에 표시됨)
     runs-on: ubuntu-latest # 실행 환경 지정 (Ubuntu 최신 버전)
+    environment: ${{ github.ref == 'refs/heads/main' && 'production' || 'development' }}
 
     steps: # 작업 내 단계들
       - name: Checkout code # 1. 코드 가져오기
@@ -29,6 +33,12 @@ jobs:
 
       - name: Install dependencies # 3. 의존성 설치
         run: npm install
+
+      - name: Set up environment variables
+        env:
+          NODE_ENV: ${{ github.ref == 'refs/heads/main' && 'production' || 'development' }}
+        run: |
+          echo "NODE_ENV=$NODE_ENV" >> .env
 
       - name: Lint code # 4. 코드 린팅 실행 (ESLint 설정 필요)
         run: |
