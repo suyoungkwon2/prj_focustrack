@@ -31,7 +31,13 @@ jobs:
         run: npm install
 
       - name: Lint code # 4. 코드 린팅 실행 (ESLint 설정 필요)
-        run: npm run lint # package.json의 "lint" 스크립트 실행
+        run: |
+          npm run lint -- --fix
+          git config --global user.name 'GitHub Actions'
+          git config --global user.email 'actions@github.com'
+          git add .
+          git commit -m 'style: fix linting errors' || true
+          git push || true
 
       - name: Build extension package # 5. 확장 프로그램 빌드
         run: npm run build # package.json의 "build" 스크립트 실행 (build.js 실행)
