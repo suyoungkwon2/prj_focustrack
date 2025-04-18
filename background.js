@@ -101,6 +101,24 @@ Classify the page into one of the following three categories, based on both the 
 
 ---
 
+Response Format:
+Your response must follow this exact format:
+
+1. Main Topic: [Your one-sentence summary here]
+
+2. Key Points:
+   * [First key point]
+   * [Second key point]
+   * [Third key point]
+   * [Fourth key point] (if applicable)
+   * [Fifth key point] (if applicable)
+
+3. Category: [Growth/Daily Life/Entertainment]
+
+Do not include any additional text, explanations, or formatting outside of this structure.
+
+---
+
 URL: ${url}  
 Title: ${title}  
 Content:  
@@ -120,7 +138,8 @@ ${bodyText.slice(0, 10000)}
     });
 
     const result = await response.json();
-    console.log("[GEMINI] Summary received:", result);
+    console.log("[GEMINI] Raw API Response:", JSON.stringify(result, null, 2));
+    console.log("[GEMINI] Generated Text:", result?.candidates?.[0]?.content?.parts?.[0]?.text || "[No summary returned]");
     return result?.candidates?.[0]?.content?.parts?.[0]?.text || "[No summary returned]";
   } catch (error) {
     console.error("[GEMINI] API call failed:", error);
