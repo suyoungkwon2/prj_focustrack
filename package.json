@@ -1,0 +1,19 @@
+{
+    "name": "focustrack2",
+    "version": "1.0.0",
+    "description": "Tracks Browse and focus sessions",
+    "private": true,
+    "scripts": {
+        "lint": "eslint . --ext .js",
+        "build": "node build.js",
+        "test": "echo \"Error: no test specified\" && exit 1"
+    },
+    "devDependencies": {
+        "@eslint/js": "^9.25.0",
+        "eslint": "^8.57.1",
+        "eslint-plugin-react": "^7.37.5",
+        "fs-extra": "^11.0.0",
+        "globals": "^16.0.0",
+        "zip-local": "^0.3.5"
+    }
+}
