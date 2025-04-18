@@ -1,0 +1,49 @@
+# .github/workflows/main.yml
+
+name: FocusTrack CI # 워크플로우 이름
+
+# 워크플로우 트리거 설정 (옵션 2: 모든 브랜치 push, 모든 PR)
+on:
+  push:
+    branches:
+      - '**' # 모든 브랜치 ('**'는 모든 것을 의미) 에 push 될 때 실행
+  pull_request:
+    branches:
+      - '**' # 모든 브랜치를 대상으로 하는 Pull Request 발생 시 실행 (생성, 업데이트 등)
+  workflow_dispatch: # GitHub Actions 탭에서 수동으로 실행 가능
+
+jobs:
+  build-and-lint: # 작업(Job) ID (이름 변경 가능)
+    name: Build and Lint Extension # 작업 이름 (GitHub Actions UI에 표시됨)
+    runs-on: ubuntu-latest # 실행 환경 지정 (Ubuntu 최신 버전)
+
+    steps: # 작업 내 단계들
+      - name: Checkout code # 1. 코드 가져오기
+        uses: actions/checkout@v4 # GitHub의 공식 체크아웃 액션 사용
+
+      - name: Set up Node.js # 2. Node.js 환경 설정
+        uses: actions/setup-node@v4 # 공식 Node.js 설정 액션 사용
+        with:
+          node-version: '18' # 사용할 Node.js 버전 (package.json과 호환되도록)
+          cache: 'npm' # npm 의존성 캐싱 설정으로 설치 속도 향상
+
+      - name: Install dependencies # 3. 의존성 설치
+        run: npm install
+
+      - name: Lint code # 4. 코드 린팅 실행 (ESLint 설정 필요)
+        run: |
+          npm run lint -- --fix
+          git config --global user.name 'GitHub Actions'
+          git config --global user.email 'actions@github.com'
+          git add .
+          git commit -m 'style: fix linting errors' || true
+          git push || true
+
+      - name: Build extension package # 5. 확장 프로그램 빌드
+        run: npm run build # package.json의 "build" 스크립트 실행 (build.js 실행)
+
+      - name: Upload build artifact # 6. 빌드 결과물(.zip) 업로드
+        uses: actions/upload-artifact@v4 # 공식 아티팩트 업로드 액션 사용
+        with:
+          name: focustrack-extension-package # 업로드될 아티팩트 이름
+          path: '*.zip' # 루트 디렉토리에서 .zip 확장자를 가진 모든 파일 찾아서 업로드

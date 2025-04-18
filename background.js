@@ -274,6 +274,17 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       eventCounter[message.eventType]++;
     }
   }
+
+  if (message.type === 'getActiveTabInfo') {
+    chrome.tabs.query({active: true, currentWindow: true}, (tabs) => {
+      const activeTab = tabs[0];
+      sendResponse({
+        url: activeTab.url,
+        title: activeTab.title
+      });
+    });
+    return true;
+  }
 });
 
 setInterval(() => {

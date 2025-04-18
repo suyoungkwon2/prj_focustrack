@@ -29,3 +29,29 @@ function extractImportantImages() {
 ["mousemove", "keydown", "click"].forEach((event) => {
   document.addEventListener(event, () => reportActivity(event), { passive: true });
 });
+
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    if (message.type === 'extractContent') {
+        const bodyText = document.body.innerText;
+        const images = Array.from(document.querySelectorAll('img'))
+            .filter(img => {
+                const rect = img.getBoundingClientRect();
+                return img.src && 
+                       img.complete && 
+                       rect.width >= 200 && 
+                       rect.height >= 150 && 
+                       img.src.startsWith('http') && 
+                       !img.src.includes('data:');
+            })
+            .slice(0, 5)
+            .map(img => ({
+                url: img.src,
+                alt: img.alt || '',
+                width: img.width,
+                height: img.height
+            }));
+
+        sendResponse({ bodyText, images });
+    }
+    return true;
+});
