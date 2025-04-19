@@ -9,6 +9,18 @@ const MERGE_WINDOW = 10 * 60 * 1000;
 let eventCounter = { mousemove: 0, click: 0, keydown: 0 };
 let senderURLCache = null;
 
+// 사용자 UUID 초기화
+chrome.runtime.onInstalled.addListener(() => {
+  chrome.storage.local.get(['userUUID'], (result) => {
+    if (!result.userUUID) {
+      const userUUID = generateUUID();
+      chrome.storage.local.set({ userUUID }, () => {
+        console.log('[UUID] Generated new user UUID:', userUUID);
+      });
+    }
+  });
+});
+
 function formatTime(timestamp) {
   const date = new Date(timestamp);
   return date.toISOString().replace("T", " ").substring(0, 19);
@@ -150,14 +162,22 @@ ${bodyText.slice(0, 10000)}
 // Firebase에 세션 저장 함수
 async function saveSessionToFirebase(session) {
   try {
-    // 문서 ID 자동 생성을 위해 addDoc 사용
-    const docRef = await addDoc(collection(db, "focusSessions"), session);
+    // 사용자 UUID 가져오기
+    const { userUUID } = await chrome.storage.local.get(['userUUID']);
+    if (!userUUID) {
+      console.error("[FIREBASE] No user UUID found");
+      return null;
+    }
+
+    // 사용자별 컬렉션에 저장
+    const userSessionsRef = collection(db, `users/${userUUID}/focusSessions`);
+    const docRef = await addDoc(userSessionsRef, session);
     console.log("[FIREBASE] Session saved with ID:", docRef.id);
     
     // Firebase 문서 ID를 세션에 저장 (업데이트 용도)
     session.firebaseId = docRef.id;
     
-    // 로컬 스토리지에도 Firebase ID 저장 (선택사항)
+    // 로컬 스토리지에도 Firebase ID 저장
     chrome.storage.local.get(["focusSessions"], (res) => {
       const sessions = res.focusSessions || [];
       const sessionIndex = sessions.findIndex(s => s.id === session.id);
@@ -182,8 +202,15 @@ async function updateSessionInFirebase(session) {
   }
   
   try {
-    // firebaseId를 사용하여 문서 참조 생성
-    const sessionRef = doc(db, "focusSessions", session.firebaseId);
+    // 사용자 UUID 가져오기
+    const { userUUID } = await chrome.storage.local.get(['userUUID']);
+    if (!userUUID) {
+      console.error("[FIREBASE] No user UUID found");
+      return false;
+    }
+
+    // 사용자별 컬렉션에서 문서 참조 생성
+    const sessionRef = doc(db, `users/${userUUID}/focusSessions`, session.firebaseId);
     
     // 세션 데이터로 문서 업데이트
     await updateDoc(sessionRef, {
@@ -196,8 +223,8 @@ async function updateSessionInFirebase(session) {
       summaryPoints: session.summaryPoints,
       summaryCategory: session.summaryCategory,
       segments: session.segments,
-      images: session.images || [], // 이미지 정보 추가
-      visitCount: session.visitCount || 1 // 방문 횟수 추가
+      images: session.images || [],
+      visitCount: session.visitCount || 1
     });
     
     console.log("[FIREBASE] Session updated:", session.firebaseId);
@@ -453,8 +480,10 @@ setInterval(() => {
           
         } else {
           // 새 세션 생성
+          const { userUUID } = await chrome.storage.local.get(['userUUID']);
           const newSession = {
             id: generateUUID(),
+            userUUID: userUUID,
             startTime,
             startTimeFormatted: formatTime(startTime),
             endTime,
@@ -470,8 +499,8 @@ setInterval(() => {
             summaryPoints: [],
             summaryCategory: "",
             segments: [{ start: startTime, end: endTime }],
-            images: [], // 이미지 배열 추가
-            visitCount: 1 // 방문 횟수 추가
+            images: [],
+            visitCount: 1
           };
           
           // Active 세션인 경우 AI 요약 및 이미지 추출 진행
