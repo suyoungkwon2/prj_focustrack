@@ -1,18 +1,27 @@
- {
-    "name": "focustrack2",
+{
+    "name": "focustrack",
     "version": "1.0.0",
-    "description": "Tracks Browse and focus sessions",
-    "private": true,
+    "description": "Website focus analysis tool",
+    "type": "module",
+    "main": "src/tests/site-analysis.test.js",
     "scripts": {
         "lint": "eslint .",
         "build": "node build.js",
-        "test": "echo \"Error: no test specified\" && exit 1"
+        "test": "node src/tests/site-analysis.test.js"
     },
     "devDependencies": {
         "@eslint/js": "^9.25.0",
+        "archiver": "^6.0.1",
         "eslint": "^8.57.1",
         "fs-extra": "^11.0.0",
-        "globals": "^16.0.0",
-        "archiver": "^6.0.1"
+        "globals": "^16.0.0"
+    },
+    "dependencies": {
+        "@langchain/core": "^0.1.27",
+        "@langchain/google-genai": "^0.0.7",
+        "@langchain/openai": "^0.5.6",
+        "dotenv": "^16.4.5",
+        "langchain": "^0.3.23",
+        "langsmith": "^0.3.19"
     }
 }
