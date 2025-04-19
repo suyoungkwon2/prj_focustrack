@@ -327,7 +327,13 @@ async function extractContentAndSummarize(tabId, url, title) {
         console.error("[EXTRACT] All attempts failed, returning error");
         return {
           success: false,
-          error: error.message || "Unknown error"
+          error: error.message || "Unknown error",
+          extractionError: {
+            message: error.message,
+            url: url,
+            timestamp: new Date().toISOString(),
+            attempts: attempts
+          }
         };
       }
       
@@ -388,6 +394,12 @@ setInterval(() => {
         title: tab?.title || "Unknown Page"
       };
 
+      // tabId가 없는 경우 즉시 에러 기록
+      if (!tabInfo.id) {
+        console.error("[EXTRACT] Tab ID not available for content extraction");
+        return;
+      }
+
       chrome.storage.local.get(["focusSessions"], async (res) => {
         const sessions = res.focusSessions || [];
         
@@ -436,32 +448,40 @@ setInterval(() => {
             
             try {
               // 콘텐츠 추출 및 AI 요약
-              if (tabInfo.id) {
-                console.log("[AI] Starting content extraction and summarization");
-                const contentResult = await extractContentAndSummarize(
-                  tabInfo.id,
-                  tabInfo.url,
-                  tabInfo.title
-                );
+              console.log("[AI] Starting content extraction and summarization");
+              const contentResult = await extractContentAndSummarize(
+                tabInfo.id,
+                tabInfo.url,
+                tabInfo.title
+              );
+              
+              if (contentResult && contentResult.success) {
+                // 세션 업데이트
+                mergeableSession.images = contentResult.images || [];
+                mergeableSession.summaryTopic = contentResult.summary.topic || "";
+                mergeableSession.summaryPoints = contentResult.summary.points || [];
+                mergeableSession.summaryCategory = contentResult.summary.category || "";
                 
-                if (contentResult && contentResult.success) {
-                  // 세션 업데이트
-                  mergeableSession.images = contentResult.images || [];
-                  mergeableSession.summaryTopic = contentResult.summary.topic || "";
-                  mergeableSession.summaryPoints = contentResult.summary.points || [];
-                  mergeableSession.summaryCategory = contentResult.summary.category || "";
-                  
-                  console.log("[GEMINI] Updated merged session:", mergeableSession.id);
-                  console.log("[SUMMARY] Topic:", mergeableSession.summaryTopic);
-                  console.log("[IMAGES] Extracted images:", contentResult.images?.length || 0);
-                } else {
-                  console.error("[EXTRACT] Failed to extract content:", contentResult?.error || "Unknown error");
-                }
+                console.log("[GEMINI] Updated merged session:", mergeableSession.id);
+                console.log("[SUMMARY] Topic:", mergeableSession.summaryTopic);
+                console.log("[IMAGES] Extracted images:", contentResult.images?.length || 0);
               } else {
-                console.error("[SESSION] Tab ID is not available for content extraction");
+                mergeableSession.extractionError = contentResult?.extractionError || {
+                  message: "Failed to extract content",
+                  url: tabInfo.url,
+                  timestamp: new Date().toISOString(),
+                  attempts: 0
+                };
+                console.error("[EXTRACT] Content extraction failed:", mergeableSession.extractionError);
               }
             } catch (error) {
-              console.error("[AI] Error during content extraction:", error);
+              mergeableSession.extractionError = {
+                message: error.message || "Unknown error during extraction",
+                url: tabInfo.url,
+                timestamp: new Date().toISOString(),
+                attempts: 0
+              };
+              console.error("[EXTRACT] Error during content extraction:", mergeableSession.extractionError);
             }
           }
           
@@ -500,13 +520,15 @@ setInterval(() => {
             summaryCategory: "",
             segments: [{ start: startTime, end: endTime }],
             images: [],
-            visitCount: 1
+            visitCount: 1,
+            extractionError: null
           };
           
           // Active 세션인 경우 AI 요약 및 이미지 추출 진행
-          if (sessionType === "active" && tabInfo.id) {
+          if (sessionType === "active") {
             try {
               console.log("[NEW SESSION] Active session created, starting AI summarization");
+              
               // 콘텐츠 추출 및 AI 요약
               const contentResult = await extractContentAndSummarize(
                 tabInfo.id,
@@ -524,10 +546,22 @@ setInterval(() => {
                 console.log("[NEW SESSION] Summary generated successfully");
                 console.log("[SUMMARY] Topic:", newSession.summaryTopic);
               } else {
-                console.error("[NEW SESSION] Failed to generate summary:", contentResult?.error || "Unknown error");
+                newSession.extractionError = contentResult?.extractionError || {
+                  message: "Failed to extract content",
+                  url: tabInfo.url,
+                  timestamp: new Date().toISOString(),
+                  attempts: 0
+                };
+                console.error("[EXTRACT] Content extraction failed:", newSession.extractionError);
               }
             } catch (error) {
-              console.error("[NEW SESSION] Error during AI summarization:", error);
+              newSession.extractionError = {
+                message: error.message || "Unknown error during extraction",
+                url: tabInfo.url,
+                timestamp: new Date().toISOString(),
+                attempts: 0
+              };
+              console.error("[EXTRACT] Error during content extraction:", newSession.extractionError);
             }
           } else {
             console.log("[NEW SESSION] Inactive session created, no AI summarization needed");
