@@ -1,5 +1,6 @@
 // background.js
 import { db, collection, addDoc, doc, updateDoc } from './firebase-config.js';
+import { analyzeYouTubeVideo, isExtractableUrl } from './youtubedataextraction/youtubedataextraction.js';
 
 let lastActivityTime = Date.now();
 let activeStartTime = null;
@@ -244,7 +245,89 @@ async function extractContentAndSummarize(tabId, url, title) {
     try {
       console.log(`[EXTRACT] Attempt ${attempts + 1} starting for ${url}`);
       
-      // 텍스트 및 이미지 추출
+      // URL 추출 가능성 검사
+      if (!isExtractableUrl(url)) {
+        console.log("[EXTRACT] URL is not extractable, skipping content extraction");
+        return {
+          success: true,
+          fullText: "",
+          images: [],
+          summary: {
+            topic: "Unavailable",
+            points: ["Content extraction not available for this URL"],
+            category: "Unknown"
+          }
+        };
+      }
+      
+      // YouTube 영상인 경우 처리
+      if (url.includes("youtube.com/watch?v=") || url.includes("youtu.be/") || url.includes("youtube.com/shorts/")) {
+        console.log("[EXTRACT] YouTube video detected, using YouTube data extraction");
+        console.log("[EXTRACT] YouTube URL:", url);
+        
+        try {
+          const videoData = await analyzeYouTubeVideo(url);
+          console.log("[EXTRACT] YouTube video data:", videoData);
+          
+          if (!videoData) {
+            console.error("[EXTRACT] Failed to extract YouTube video data");
+            throw new Error("Failed to extract YouTube video data");
+          }
+          
+          // Gemini API 호출 (타임아웃 추가)
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 15000);
+          
+          try {
+            console.log("[GEMINI] Calling API for YouTube video summary...");
+            const aiResult = await summarizeWithGemini({ 
+              url: url, 
+              title: videoData.title || title, 
+              bodyText: `${videoData.description || ''}\n\nTags: ${videoData.tags.join(', ')}\n\nCaptions: ${videoData.captions || ''}`
+            });
+            
+            clearTimeout(timeoutId);
+            
+            if (!aiResult || aiResult === "[No summary returned]" || aiResult === "[Gemini API error]") {
+              console.error("[GEMINI] Invalid API response:", aiResult);
+              throw new Error("Failed to get valid summary from Gemini API");
+            }
+            
+            console.log("[GEMINI] Processing API response with cleanGeminiResponse");
+            const cleanedResponse = cleanGeminiResponse(aiResult);
+            
+            return {
+              success: true,
+              fullText: `${videoData.description || ''}\n\nTags: ${videoData.tags.join(', ')}\n\nCaptions: ${videoData.captions || ''}`,
+              images: [], // YouTube 영상의 경우 이미지는 추출하지 않음
+              summary: {
+                topic: cleanedResponse.topic,
+                points: cleanedResponse.points,
+                category: cleanedResponse.category
+              }
+            };
+          } catch (apiError) {
+            clearTimeout(timeoutId);
+            console.error("[GEMINI] API call failed:", apiError);
+            throw apiError;
+          }
+        } catch (error) {
+          console.error("[EXTRACT] YouTube data extraction failed:", error);
+          // 에러가 발생해도 기본 세션 정보는 저장
+          return {
+            success: true,
+            fullText: "",
+            images: [],
+            summary: {
+              topic: "YouTube Video",
+              points: ["Failed to extract detailed information"],
+              category: "Entertainment"
+            }
+          };
+        }
+      }
+      
+      // 일반 웹사이트 처리 (기존 로직)
       const [{ result }] = await chrome.scripting.executeScript({
         target: { tabId: tabId },
         func: () => {
@@ -394,12 +477,7 @@ setInterval(() => {
         title: tab?.title || "Unknown Page"
       };
 
-      // tabId가 없는 경우 즉시 에러 기록
-      if (!tabInfo.id) {
-        console.error("[EXTRACT] Tab ID not available for content extraction");
-        return;
-      }
-
+      // tabId가 없는 경우에도 세션 저장 진행
       chrome.storage.local.get(["focusSessions"], async (res) => {
         const sessions = res.focusSessions || [];
         
@@ -446,42 +524,47 @@ setInterval(() => {
             console.log("[SESSION] Converting from inactive to active:", mergeableSession.id);
             mergeableSession.sessionType = "active";
             
-            try {
-              // 콘텐츠 추출 및 AI 요약
-              console.log("[AI] Starting content extraction and summarization");
-              const contentResult = await extractContentAndSummarize(
-                tabInfo.id,
-                tabInfo.url,
-                tabInfo.title
-              );
-              
-              if (contentResult && contentResult.success) {
-                // 세션 업데이트
-                mergeableSession.images = contentResult.images || [];
-                mergeableSession.summaryTopic = contentResult.summary.topic || "";
-                mergeableSession.summaryPoints = contentResult.summary.points || [];
-                mergeableSession.summaryCategory = contentResult.summary.category || "";
+            // Tab ID가 있는 경우에만 콘텐츠 추출 시도
+            if (tabInfo.id) {
+              try {
+                // 콘텐츠 추출 및 AI 요약
+                console.log("[AI] Starting content extraction and summarization");
+                const contentResult = await extractContentAndSummarize(
+                  tabInfo.id,
+                  tabInfo.url,
+                  tabInfo.title
+                );
                 
-                console.log("[GEMINI] Updated merged session:", mergeableSession.id);
-                console.log("[SUMMARY] Topic:", mergeableSession.summaryTopic);
-                console.log("[IMAGES] Extracted images:", contentResult.images?.length || 0);
-              } else {
-                mergeableSession.extractionError = contentResult?.extractionError || {
-                  message: "Failed to extract content",
+                if (contentResult && contentResult.success) {
+                  // 세션 업데이트
+                  mergeableSession.images = contentResult.images || [];
+                  mergeableSession.summaryTopic = contentResult.summary.topic || "";
+                  mergeableSession.summaryPoints = contentResult.summary.points || [];
+                  mergeableSession.summaryCategory = contentResult.summary.category || "";
+                  
+                  console.log("[GEMINI] Updated merged session:", mergeableSession.id);
+                  console.log("[SUMMARY] Topic:", mergeableSession.summaryTopic);
+                  console.log("[IMAGES] Extracted images:", contentResult.images?.length || 0);
+                } else {
+                  mergeableSession.extractionError = contentResult?.extractionError || {
+                    message: "Failed to extract content",
+                    url: tabInfo.url,
+                    timestamp: new Date().toISOString(),
+                    attempts: 0
+                  };
+                  console.error("[EXTRACT] Content extraction failed:", mergeableSession.extractionError);
+                }
+              } catch (error) {
+                mergeableSession.extractionError = {
+                  message: error.message || "Unknown error during extraction",
                   url: tabInfo.url,
                   timestamp: new Date().toISOString(),
                   attempts: 0
                 };
-                console.error("[EXTRACT] Content extraction failed:", mergeableSession.extractionError);
+                console.error("[EXTRACT] Error during content extraction:", mergeableSession.extractionError);
               }
-            } catch (error) {
-              mergeableSession.extractionError = {
-                message: error.message || "Unknown error during extraction",
-                url: tabInfo.url,
-                timestamp: new Date().toISOString(),
-                attempts: 0
-              };
-              console.error("[EXTRACT] Error during content extraction:", mergeableSession.extractionError);
+            } else {
+              console.log("[EXTRACT] Skipping content extraction due to missing tab ID");
             }
           }
           
@@ -524,8 +607,8 @@ setInterval(() => {
             extractionError: null
           };
           
-          // Active 세션인 경우 AI 요약 및 이미지 추출 진행
-          if (sessionType === "active") {
+          // Active 세션이고 Tab ID가 있는 경우에만 AI 요약 및 이미지 추출 진행
+          if (sessionType === "active" && tabInfo.id) {
             try {
               console.log("[NEW SESSION] Active session created, starting AI summarization");
               
@@ -564,7 +647,7 @@ setInterval(() => {
               console.error("[EXTRACT] Error during content extraction:", newSession.extractionError);
             }
           } else {
-            console.log("[NEW SESSION] Inactive session created, no AI summarization needed");
+            console.log("[NEW SESSION] Inactive session or missing tab ID, no AI summarization needed");
           }
           
           // 새 세션 저장 - Firebase에 먼저 저장
