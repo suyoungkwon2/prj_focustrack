@@ -2,9 +2,13 @@
 import fs from 'fs-extra'; // 파일/폴더 작업용 라이브러리
 import archiver from 'archiver'; // 압축 라이브러리
 import path from 'path'; // 경로 관련 작업용 내장 모듈
-import manifest from './manifest.json' assert { type: 'json' }; // manifest 파일 로드 (버전 정보 등 활용 가능)
+// import manifest from './manifest.json' assert { type: 'json' }; // Use fs.readFileSync instead
 
 const __dirname = path.dirname(new URL(import.meta.url).pathname); // ES 모듈에서 __dirname 정의
+
+// Read manifest.json using fs
+const manifestPath = path.join(__dirname, 'manifest.json');
+const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
 
 const DIST_DIR = path.join(__dirname, 'dist'); // 빌드 결과물이 저장될 폴더 경로
 const ZIP_FILENAME = `focustrack-${manifest.version}.zip`; // 압축 파일 이름 (버전 포함)
