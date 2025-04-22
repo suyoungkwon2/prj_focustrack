@@ -77,7 +77,7 @@
 1.  **데이터 준비 (Data Preparation):**
     *   트리거: "Growth" 카테고리의 `focusSessions` 항목이 30개 누적되면 이 프로세스를 시작합니다. (Firestore 리스너, 스케줄링된 함수 등 활용)
     *   데이터 로딩: 해당 30개 세션의 `id`, `summaryPoints`, `summaryTopic`, `duration` 데이터를 데이터베이스에서 가져옵니다.
-2.  **1단계: 사이트 분류 (AI Call 1 - Classification)**
+2.  **1단계: 사이트 분류 (AI Call 1 - Classification)(완료)**
     *   **입력:** 30개 세션의 `id`, `summaryTopic`, `duration` 정보 리스트. (참고: 문서 4.(1)에 따라 `summaryPoints`는 제외)
     *   **AI 프롬프트:**
         *   "다음 세션 목록을 의미론적 유사성을 기반으로 그룹화해주세요."
@@ -320,6 +320,132 @@
   "summaryTopic": "Claude Code is an agentic coding tool by Anthropic that helps developers code faster by understanding their codebase and executing natural language commands in the terminal",
   "title": "Claude Code overview - Anthropic",
   "url": "https://docs.anthropic.com/en/docs/agents-and-tools/claude-code/overview",
+  "userUUID": "9de8ed54-c516-4c45-861d-e219b033bc7c",
+  "visitCount": 2
+}'''
+,
+'''{
+  "id": "acbdb15a-0413-49c8-bbd5-229bb4847c2b",
+  "userUUID": "9de8ed54-c516-4c45-861d-e219b033bc7c",
+  "startTime": 1745350985553,
+  "startTimeFormatted": "2025-04-22 19:43:05",
+  "endTime": 1745351015903,
+  "endTimeFormatted": "2025-04-22 19:43:35",
+  "duration": 30,
+  "sessionType": "active",
+  "url": "https://newsstand.naver.com/?list&pcode=904",
+  "title": "주요언론사 : 네이버 뉴스스탠드",
+  "domain": "newsstand.naver.com",
+  "canTrackActivity": true,
+  "eventCount": {
+    "mousemove": 107,
+    "click": 20,
+    "keydown": 0
+  },
+  "summaryTopic": "This webpage is the Naver Newsstand, providing a curated selection of articles from various news outlets in Korea",
+  "summaryPoints": [
+    "The Newsstand allows users to view articles directly edited by the respective news organizations",
+    "Users can customize their news feed by selecting specific media outlets (\"MY뉴스\")",
+    "The page provides options to view news by topic (e.g., \"종합/경제\", \"IT\", \"스포츠/연예\")",
+    "The Newsstand offers a rotating display of different news sources"
+  ],
+  "summaryCategory": "Growth",
+  "segments": [
+    {
+      "start": 1745350985553,
+      "end": 1745351015903
+    }
+  ],
+  "images": [],
+  "visitCount": 1,
+  "extractionError": null,
+  "firebaseId": "dpxLiriwq75bLMfzUyib"
+}'''
+,
+'''{
+  "id": "6b2b03f5-6b80-4f49-90ce-a2d02dbca402",
+  "userUUID": "9de8ed54-c516-4c45-861d-e219b033bc7c",
+  "startTime": 1745351217138,
+  "startTimeFormatted": "2025-04-22 19:46:57",
+  "endTime": 1745351233118,
+  "endTimeFormatted": "2025-04-22 19:47:13",
+  "duration": 15,
+  "sessionType": "active",
+  "url": "https://www.amazon.com/gp/product/B00T7PA482/ref=ewc_pr_img_2?smid=ATVPDKIKX0DER&psc=1",
+  "title": "Amazon.com: MRS. MEYER'S CLEAN DAY Hand Soap, Made with Essential Oils, Biodegradable Formula, Basil, 12.5 fl. oz : Beauty & Personal Care",
+  "domain": "www.amazon.com",
+  "canTrackActivity": true,
+  "eventCount": {
+    "mousemove": 27,
+    "click": 1,
+    "keydown": 0
+  },
+  "summaryTopic": "This page is an Amazon product listing for Mrs. Meyer's Clean Day Basil scented hand soap, highlighting its essential oils, biodegradable formula, and garden-inspired scent",
+  "summaryPoints": [
+    "The hand soap is made with essential oils, aloe vera, and olive oil",
+    "It has a Basil scent described as cool, crisp, uplifting, and grounding",
+    "The formula is free of parabens, phthalates, and artificial colors, and is cruelty-free",
+    "It's available for one-time purchase or subscription with savings",
+    "The product details include dimensions, weight, and manufacturing information"
+  ],
+  "summaryCategory": "Daily Life",
+  "segments": [
+    {
+      "start": 1745351217138,
+      "end": 1745351233118
+    }
+  ],
+  "images": [],
+  "visitCount": 1,
+  "extractionError": null,
+  "firebaseId": "WO6njibyfxy8rmRsTVYq"
+}'''
+,
+'''{
+  "canTrackActivity": true,
+  "domain": "news.jtbc.co.kr",
+  "duration": 28,
+  "endTime": 1745351690561,
+  "endTimeFormatted": "2025-04-22 19:54:50",
+  "eventCount": {
+    "click": 1,
+    "keydown": 0,
+    "mousemove": 72
+  },
+  "extractionError": null,
+  "firebaseId": "aS5jf70obKlcW89fAiBV",
+  "id": "da4fddee-b6f7-4f4d-ba34-e3de839256e9",
+  "images": [
+    {
+      "alt": "윤석열 전 대통령이 21일 서울 서초구 서울중앙지법에서 열린 내란 우두머리 혐의 형사재판 2차 공판에 출석하고 있다. 〈사진=사진공동취재단〉",
+      "height": 426,
+      "url": "https://photo.jtbc.co.kr/news/jam_photo/202504/21/4c201578-b0da-41b6-94f0-f018329beda3.jpg",
+      "width": 640
+    }
+  ],
+  "segments": [
+    {
+      "end": 1745351680877,
+      "start": 1745351658157
+    },
+    {
+      "start": 1745351684331,
+      "end": 1745351690561
+    }
+  ],
+  "sessionType": "active",
+  "startTime": 1745351658157,
+  "startTimeFormatted": "2025-04-22 19:54:18",
+  "summaryCategory": "Growth",
+  "summaryPoints": [
+    "Yoon Suk-yeol claims martial law is a value-neutral legal tool, comparable to a knife that can be used for good or bad",
+    "He argues that his actions should be judged on whether they demonstrably undermined democratic order, not simply on the declaration of martial law itself",
+    "Witnesses testified that they were ordered to forcibly remove lawmakers from the National Assembly during the martial law period",
+    "Yoon claims no one was hurt or killed during the martial law, and only a small number of troops were mobilized"
+  ],
+  "summaryTopic": "Former President Yoon Suk-yeol argued in his trial for insurrection that declaring martial law is a neutral legal tool, like a knife, and should not be automatically equated with undermining constitutional order unless proven to have led to a collapse of democracy or a long-term dictatorship",
+  "title": "윤 \"계엄령은 칼과 같아…칼 썼다고 무조건 살인 아냐\" 주장 | JTBC 뉴스",
+  "url": "https://news.jtbc.co.kr/article/NB12243656",
   "userUUID": "9de8ed54-c516-4c45-861d-e219b033bc7c",
   "visitCount": 2
 }'''
