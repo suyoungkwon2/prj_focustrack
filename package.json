@@ -1,8 +1,9 @@
- {
+{
     "name": "focustrack2",
     "version": "1.0.0",
     "description": "Tracks Browse and focus sessions",
     "private": true,
+    "type": "module",
     "scripts": {
         "lint": "eslint .",
         "build": "node build.js",
