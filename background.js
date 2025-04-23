@@ -2,7 +2,13 @@
 import { db, collection, addDoc, doc, updateDoc, query, where, getDocs, orderBy } from './firebase-config.js';
 import { analyzeYouTubeVideo, isExtractableUrl } from './youtubedataextraction/youtubedataextraction.js';
 // import { getFocusSessionsByPeriod } from './src/features/digital_routine/firebaseUtils.js'; // Keep this commented for now
-// import { calculateMajorCategoryForBlock } from './src/features/digital_routine/routineCalculator.js'; // Keep this commented for now
+import { calculateMajorCategoryForBlock, get10MinBlockIndex, get10MinBlockTimeRange, BLOCKS_PER_DAY } from './src/features/digital_routine/routineCalculator.js';
+
+// Check if the import worked
+console.log("Testing calculateMajorCategoryForBlock right after import:", typeof calculateMajorCategoryForBlock);
+console.log("Testing get10MinBlockIndex right after import:", typeof get10MinBlockIndex);
+console.log("Testing get10MinBlockTimeRange right after import:", typeof get10MinBlockTimeRange);
+console.log("Testing BLOCKS_PER_DAY right after import:", typeof BLOCKS_PER_DAY);
 
 console.log("Background script loaded"); // Simplified log
 
@@ -740,13 +746,16 @@ async function getFocusSessionsByPeriod(userId, startDate, endDate) {
 // ---- END getFocusSessionsByPeriod function ----
 
 // --- TEMPORARY TEST CODE at the end of background.js --- 
-// Uncomment the test code block
 (async () => {
-  console.log("[TEMP TEST] Starting test (getFocusSessionsByPeriod defined locally)...");
+  console.log("[TEMP TEST] Starting test (checking last 6 blocks)...");
   await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2s
 
+  if (typeof calculateMajorCategoryForBlock !== 'function' || typeof get10MinBlockIndex !== 'function') {
+      console.error("[TEMP TEST] ❌ calculateMajorCategoryForBlock or get10MinBlockIndex is not defined. Import failed.");
+      return;
+  }
+
   try {
-    // Get User UUID
     const { userUUID } = await chrome.storage.local.get(['userUUID']);
     if (!userUUID) {
       console.error("[TEMP TEST] Failed to get User UUID.");
@@ -754,30 +763,40 @@ async function getFocusSessionsByPeriod(userId, startDate, endDate) {
     }
     console.log("[TEMP TEST] User UUID:", userUUID);
 
-    // Define test period (e.g., last 24 hours)
-    const endDate = new Date();
-    const startDate = new Date(endDate.getTime() - 24 * 60 * 60 * 1000); 
-    console.log("[TEMP TEST] Test period:", startDate.toISOString(), "to", endDate.toISOString());
+    // Fetch sessions for the relevant period (e.g., last few hours to be safe)
+    const now = new Date();
+    const endPeriod = new Date(now); // End slightly after now 
+    const startPeriod = new Date(now.getTime() - 3 * 60 * 60 * 1000); // Fetch last 3 hours data
+    console.log("[TEMP TEST] Fetching sessions for period:", startPeriod.toISOString(), "to", endPeriod.toISOString());
 
-    // Call the locally defined getFocusSessionsByPeriod
     console.log("[TEMP TEST] Calling locally defined getFocusSessionsByPeriod...");
-    const sessions = await getFocusSessionsByPeriod(userUUID, startDate, endDate);
+    const sessions = await getFocusSessionsByPeriod(userUUID, startPeriod, endPeriod);
 
-    // Log results
     if (sessions === null) {
       console.error("[TEMP TEST] ❌ getFocusSessionsByPeriod returned null.");
     } else {
-      console.log(`[TEMP TEST] ✅ Fetched ${sessions.length} sessions.`);
-      if (sessions.length > 0) {
-          console.log("[TEMP TEST] Example session:", sessions[0]);
+      console.log(`[TEMP TEST] ✅ Fetched ${sessions.length} sessions for testing.`);
+      
+      // Calculate major category for the last 6 blocks (last hour)
+      console.log("[TEMP TEST] Calculating major categories for the last 6 blocks:");
+      const currentBlockIndex = get10MinBlockIndex(Date.now());
+      
+      for (let i = 0; i < 6; i++) {
+        // Calculate the index, handling wrap-around midnight (0 -> 143)
+        let blockIndexToCheck = (currentBlockIndex - i + BLOCKS_PER_DAY) % BLOCKS_PER_DAY; 
+        const blockTimeRange = get10MinBlockTimeRange(blockIndexToCheck, now); // Need helper function visible or copied
+
+        // Need get10MinBlockTimeRange here, let's copy it from calculator or make it exportable
+        // For now, just log the index
+        console.log(`[TEMP TEST] --- Checking Block Index: ${blockIndexToCheck} ---`);
+        const majorCategory = calculateMajorCategoryForBlock(blockIndexToCheck, sessions, now);
+        console.log(`[TEMP TEST] ✅ Major category for block ${blockIndexToCheck}: ${majorCategory}`);
       }
-      // Log about routineCalculator still commented out
-      console.log("[TEMP TEST] Skipping major category calculation as routineCalculator is not imported."); 
     }
   } catch (error) {
     console.error("[TEMP TEST] ❌ Error during test execution:", error);
+  } finally {
+    console.log("[TEMP TEST] Test execution finished.");
   }
-  console.log("[TEMP TEST] Test execution finished.");
 })();
-// */ // Ensure the comment-out block markers are removed if they were there
 // --- END TEMPORARY TEST CODE ---
