@@ -224,18 +224,18 @@ function calculateWLR(sessions) {
 function calculateFocusScore(sf, cfd, wlr) {
     console.log("--- Calculating Final Focus Score ---");
 
-    // 1. Normalize SF (Lower is better, target 0, cap at 10)
-    const normalizedSF = Math.max(0, 1 - (sf / 10));
+    // 1. Normalize SF (Lower is better, target 0, cap at 15)
+    const normalizedSF = Math.max(0, 1 - (sf / 15));
     console.log(`  Raw SF: ${sf}, Normalized SF: ${normalizedSF.toFixed(2)}`);
 
-    // 2. Normalize CFD (Higher is better, target 900s/15min, cap at 1)
-    const normalizedCFD = Math.min(1, cfd / 900);
+    // 2. Normalize CFD (Higher is better, target 1500s/25min, cap at 1)
+    const normalizedCFD = Math.min(1, cfd / 1500);
     console.log(`  Raw CFD: ${cfd.toFixed(2)}s, Normalized CFD: ${normalizedCFD.toFixed(2)}`);
 
-    // 3. Normalize WLR (Higher is better, target 2.0, cap at 1)
+    // 3. Normalize WLR (Higher is better, target 5.0, cap at 1)
     // Handle WLR = Infinity case separately
-    const effectiveWLR = (wlr === Infinity) ? 2.0 : wlr; // Treat Infinity as achieving the target
-    const normalizedWLR = Math.min(1, effectiveWLR / 2);
+    const effectiveWLR = (wlr === Infinity) ? 5.0 : wlr;
+    const normalizedWLR = Math.min(1, effectiveWLR / 5);
     console.log(`  Raw WLR: ${wlr === Infinity ? "Infinity" : wlr.toFixed(2)}, Normalized WLR: ${normalizedWLR.toFixed(2)}`);
 
     // 4. Apply weights and calculate final score
