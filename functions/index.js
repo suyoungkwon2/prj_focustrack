@@ -55,15 +55,15 @@ exports.onFocusSessionCreate = functions.firestore
 
         if (counterDoc.exists) {
           const currentCount = counterDoc.data().count || 0;
-          if (currentCount < 4) {
+          if (currentCount < 29) {
             newCount = currentCount + 1;
             transaction.update(counterRef, { count: newCount, updatedAt: admin.firestore.FieldValue.serverTimestamp() });
              functions.logger.log(`User ${userId}: Counter incremented to ${newCount}.`);
-          } else { // currentCount is 4, this session makes it 5
+          } else { // currentCount is 29, this session makes it 30
             newCount = 0; // Reset counter
             shouldProcessClassification = true; // Mark for processing
             transaction.set(counterRef, { count: newCount, updatedAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true }); // Reset counter
-             functions.logger.log(`User ${userId}: Counter reached 5. Resetting to 0 and triggering classification.`);
+             functions.logger.log(`User ${userId}: Counter reached 30. Resetting to 0 and triggering classification.`);
           }
         } else {
           // 문서가 없으면 새로 생성
@@ -104,9 +104,9 @@ async function processClassification(userId) {
      return;
    }
 
-  // 1. 데이터 가져오기 (최신 Growth 5개로 수정)
-  const sessions = await getGrowthSessionsData(userId, 5);
-  if (!sessions || sessions.length < 1) { // 최소 개수 정책 필요 시 추가 (예: sessions.length < 5)
+  // 1. 데이터 가져오기 (최신 Growth 30개로 수정)
+  const sessions = await getGrowthSessionsData(userId, 30);
+  if (!sessions || sessions.length < 1) { // 최소 개수 정책 필요 시 추가 (예: sessions.length < 30)
     functions.logger.log(`User ${userId}: Not enough sessions fetched (${sessions.length}) for classification.`);
     return;
   }
