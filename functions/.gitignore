@@ -1,0 +1,13 @@
+# Node Modules
+node_modules/
+
+# Runtime Files
+*.log
+*.log.*.[0-9]
+*.pid
+*.seed
+*.pid.lock
+
+# dotenv environment variables file
+.env
+.env.* 
