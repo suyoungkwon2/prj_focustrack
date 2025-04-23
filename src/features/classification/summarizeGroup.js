@@ -1,4 +1,4 @@
-// import { ChatGoogleGenerativeAI } from '@langchain/google-genai'; // Unused import
+import { ChatGoogleGenerativeAI } from '@langchain/google-genai'; // Restore import
 import dotenv from 'dotenv';
 import summarizationPrompt from '../../prompts/classification/v1/summarization_prompt.js';
 

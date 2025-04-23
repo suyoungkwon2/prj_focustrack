@@ -3,6 +3,7 @@ import { db, collection, addDoc, doc, updateDoc, query, where, getDocs, orderBy 
 import { analyzeYouTubeVideo, isExtractableUrl } from './youtubedataextraction/youtubedataextraction.js';
 // import { getFocusSessionsByPeriod } from './src/features/digital_routine/firebaseUtils.js'; // Keep this commented for now
 import { calculateMajorCategoryForBlock, get10MinBlockIndex, get10MinBlockTimeRange, BLOCKS_PER_DAY } from './src/features/digital_routine/routineCalculator.js';
+import { getHourlyBlocks, saveHourlyBlocks } from './src/features/digital_routine/routineStorage.js';
 
 // Check if the import worked
 console.log("Testing calculateMajorCategoryForBlock right after import:", typeof calculateMajorCategoryForBlock);
@@ -591,6 +592,19 @@ setInterval(() => {
                       "Visit count:", mergeableSession.visitCount, 
                       "Segments:", mergeableSession.segments.length);
           
+          // hourlyBlocks 업데이트 로직 호출
+          const latestSessionForUpdate = sessions[mergeableSessionIndex !== -1 ? mergeableSessionIndex : sessions.length - 1];
+          if (latestSessionForUpdate && latestSessionForUpdate.userUUID) {
+            await updateHourlyBlocksForSession(latestSessionForUpdate, latestSessionForUpdate.userUUID);
+          } else {
+            // userUUID가 없는 경우에 대한 처리 (예: 로컬에서 UUID 다시 가져오기)
+            const { userUUID } = await chrome.storage.local.get(['userUUID']);
+            if (userUUID) {
+              await updateHourlyBlocksForSession(latestSessionForUpdate, userUUID);
+            } else {
+              console.error('[HourlyBlocks] Cannot update hourly blocks, user UUID not found in session or storage.');
+            }
+          }
         } else {
           // 새 세션 생성
           const { userUUID } = await chrome.storage.local.get(['userUUID']);
@@ -699,7 +713,7 @@ setInterval(() => {
  * @returns {Promise<Array<object>|null>} A promise that resolves with an array of session objects 
  *                                         (including firebaseId), or null if an error occurs.
  */
-async function getFocusSessionsByPeriod(userId, startDate, endDate) {
+export async function getFocusSessionsByPeriod(userId, startDate, endDate) {
   if (!userId || !startDate || !endDate) {
     console.error("[getFocusSessionsByPeriod] Error: Missing required parameters (userId, startDate, endDate).");
     return null;
@@ -745,58 +759,78 @@ async function getFocusSessionsByPeriod(userId, startDate, endDate) {
 }
 // ---- END getFocusSessionsByPeriod function ----
 
-// --- TEMPORARY TEST CODE at the end of background.js --- 
-(async () => {
-  console.log("[TEMP TEST] Starting test (checking last 6 blocks)...");
-  await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2s
-
-  if (typeof calculateMajorCategoryForBlock !== 'function' || typeof get10MinBlockIndex !== 'function') {
-      console.error("[TEMP TEST] ❌ calculateMajorCategoryForBlock or get10MinBlockIndex is not defined. Import failed.");
-      return;
+/**
+ * 주어진 세션이 포함된 시간 범위에 대해 hourlyBlocks 데이터를 업데이트합니다.
+ * @param {object} session - 업데이트할 세션 정보 (startTime, endTime 포함)
+ * @param {string} userUUID - 현재 사용자의 UUID
+ */
+async function updateHourlyBlocksForSession(session, userUUID) {
+  if (!session || !session.startTime || !session.endTime || !userUUID) {
+    console.error('[HourlyBlocks] Invalid input for updateHourlyBlocksForSession', { session, userUUID });
+    return;
   }
+
+  console.log(`[HourlyBlocks] Updating for session: ${session.id || 'New Session'} (${formatTime(session.startTime)} - ${formatTime(session.endTime)})`);
 
   try {
-    const { userUUID } = await chrome.storage.local.get(['userUUID']);
-    if (!userUUID) {
-      console.error("[TEMP TEST] Failed to get User UUID.");
+    const startBlockIndex = get10MinBlockIndex(session.startTime);
+    const endBlockIndex = get10MinBlockIndex(session.endTime);
+
+    // 영향을 받는 모든 블록 인덱스 계산 (하루 경계를 넘어갈 수 있음)
+    const affectedIndices = [];
+    let currentIndex = startBlockIndex;
+    while (true) {
+      affectedIndices.push(currentIndex);
+      if (currentIndex === endBlockIndex) break;
+      currentIndex = (currentIndex + 1) % BLOCKS_PER_DAY; // 다음 블록으로 이동 (순환)
+    }
+
+    console.log('[HourlyBlocks] Affected block indices:', affectedIndices);
+
+    // 현재 hourlyBlocks 데이터 가져오기
+    let currentHourlyBlocks = await getHourlyBlocks();
+
+    // 영향을 받는 블록 계산에 필요한 시간 범위 설정 (충분한 여유 포함)
+    // TODO: 좀 더 정확한 시간 범위 계산이 필요할 수 있음. 지금은 하루 전체를 가져옴.
+    const calculationDate = new Date(session.startTime);
+    const startOfDay = new Date(calculationDate);
+    startOfDay.setHours(5, 0, 0, 0); // 오전 5시 기준
+    if (calculationDate.getHours() < 5) {
+      startOfDay.setDate(startOfDay.getDate() - 1); // 전날 5시
+    }
+    const endOfDay = new Date(startOfDay.getTime() + 24 * 60 * 60 * 1000 - 1); // 다음날 4:59:59.999
+
+    console.log('[HourlyBlocks] Fetching sessions for calculation period:', startOfDay.toISOString(), 'to', endOfDay.toISOString());
+
+    // 필요한 세션 데이터 다시 로드 (Firestore 사용)
+    const relevantSessions = await getFocusSessionsByPeriod(userUUID, startOfDay, endOfDay);
+
+    if (relevantSessions === null) {
+      console.error('[HourlyBlocks] Failed to fetch relevant sessions for calculation.');
       return;
     }
-    console.log("[TEMP TEST] User UUID:", userUUID);
+    console.log(`[HourlyBlocks] Fetched ${relevantSessions.length} relevant sessions for calculation.`);
 
-    // Fetch sessions for the relevant period (e.g., last few hours to be safe)
-    const now = new Date();
-    const endPeriod = new Date(now); // End slightly after now 
-    const startPeriod = new Date(now.getTime() - 3 * 60 * 60 * 1000); // Fetch last 3 hours data
-    console.log("[TEMP TEST] Fetching sessions for period:", startPeriod.toISOString(), "to", endPeriod.toISOString());
-
-    console.log("[TEMP TEST] Calling locally defined getFocusSessionsByPeriod...");
-    const sessions = await getFocusSessionsByPeriod(userUUID, startPeriod, endPeriod);
-
-    if (sessions === null) {
-      console.error("[TEMP TEST] ❌ getFocusSessionsByPeriod returned null.");
-    } else {
-      console.log(`[TEMP TEST] ✅ Fetched ${sessions.length} sessions for testing.`);
-      
-      // Calculate major category for the last 6 blocks (last hour)
-      console.log("[TEMP TEST] Calculating major categories for the last 6 blocks:");
-      const currentBlockIndex = get10MinBlockIndex(Date.now());
-      
-      for (let i = 0; i < 6; i++) {
-        // Calculate the index, handling wrap-around midnight (0 -> 143)
-        let blockIndexToCheck = (currentBlockIndex - i + BLOCKS_PER_DAY) % BLOCKS_PER_DAY; 
-        // Use the imported get10MinBlockTimeRange
-        const blockTimeRange = get10MinBlockTimeRange(blockIndexToCheck, now); 
-
-        // Log the time range for debugging (uses the previously unused variable)
-        console.log(`[TEMP TEST] --- Checking Block Index: ${blockIndexToCheck} (${blockTimeRange.blockStartTime.toLocaleTimeString()} - ${blockTimeRange.blockEndTime.toLocaleTimeString()}) ---`);
-        const majorCategory = calculateMajorCategoryForBlock(blockIndexToCheck, sessions, now);
-        console.log(`[TEMP TEST] ✅ Major category for block ${blockIndexToCheck}: ${majorCategory}`);
+    let updated = false;
+    // 영향을 받은 각 블록에 대해 Major Category 재계산
+    for (const index of affectedIndices) {
+      const majorCategory = calculateMajorCategoryForBlock(index, relevantSessions, calculationDate);
+      if (currentHourlyBlocks[index] !== majorCategory) {
+        console.log(`[HourlyBlocks] Updating block ${index}: ${currentHourlyBlocks[index]} -> ${majorCategory}`);
+        currentHourlyBlocks[index] = majorCategory;
+        updated = true;
       }
     }
+
+    // 변경된 경우에만 저장
+    if (updated) {
+      await saveHourlyBlocks(currentHourlyBlocks);
+      console.log('[HourlyBlocks] Hourly blocks updated and saved.');
+    } else {
+      console.log('[HourlyBlocks] No changes detected in hourly blocks.');
+    }
+
   } catch (error) {
-    console.error("[TEMP TEST] ❌ Error during test execution:", error);
-  } finally {
-    console.log("[TEMP TEST] Test execution finished.");
+    console.error('[HourlyBlocks] Error updating hourly blocks:', error);
   }
-})();
-// --- END TEMPORARY TEST CODE ---
+}
