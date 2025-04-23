@@ -133,8 +133,7 @@ async function processClassification(userId) {
         classifiedSummary: summary.classifiedSummary,
         classifiedKeywords: summary.classifiedKeywords,
         totalDuration: totalDuration,
-        sessionIds: groupIds,
-        createdAt: admin.firestore.FieldValue.serverTimestamp() // 생성 시간 추가
+        sessionIds: groupIds
       });
     } else {
        functions.logger.warn(`User ${userId}: Skipping group [${groupIds.join(', ')}] due to summarization error.`);
@@ -146,22 +145,25 @@ async function processClassification(userId) {
   finalResults.sort((a, b) => b.totalDuration - a.totalDuration);
   const topResults = finalResults.slice(0, 6);
 
-  // 5. 최종 결과 저장 (users/{userId}/classed 컬렉션)
+  // 5. 최종 결과 저장 (users/{userId}/classed 컬렉션에 단일 문서로)
    if (topResults.length > 0) {
-    functions.logger.log(`User ${userId}: Storing top ${topResults.length} classification results...`);
-    const batch = db.batch();
     const classedCollectionRef = db.collection(`users/${userId}/classed`);
+    const batchDocId = generateTimestampedId(classedCollectionRef); // Generate custom ID
 
-    topResults.forEach(result => {
-        const docRef = classedCollectionRef.doc(); // 자동 ID 생성
-        batch.set(docRef, result);
-    });
+    // 결과를 단일 객체로 구성
+    const classificationBatchResult = {
+        results: topResults, // Array of individual group results
+        createdAt: admin.firestore.FieldValue.serverTimestamp()
+    };
+
+    functions.logger.log(`User ${userId}: Storing classification batch result with ID: ${batchDocId}`);
 
     try {
-        await batch.commit();
-        functions.logger.log(`User ${userId}: Successfully stored ${topResults.length} classification results.`);
+        // batch 대신 단일 문서 set 사용
+        await classedCollectionRef.doc(batchDocId).set(classificationBatchResult);
+        functions.logger.log(`User ${userId}: Successfully stored classification batch result.`);
     } catch(error) {
-        functions.logger.error(`User ${userId}: Error storing classification results:`, error);
+        functions.logger.error(`User ${userId}: Error storing classification batch result:`, error);
     }
   } else {
      functions.logger.log(`User ${userId}: No final results to store.`);
@@ -170,6 +172,20 @@ async function processClassification(userId) {
    functions.logger.log(`User ${userId}: processClassification finished.`);
 }
 
+// Helper function to generate timestamped document ID
+function generateTimestampedId(collectionRef) {
+    const now = new Date();
+    const year = String(now.getFullYear()).slice(-2); // YY
+    const month = String(now.getMonth() + 1).padStart(2, '0'); // MM (01-12)
+    const day = String(now.getDate()).padStart(2, '0'); // DD
+    const hours = String(now.getHours()).padStart(2, '0'); // HH (00-23)
+    const minutes = String(now.getMinutes()).padStart(2, '0'); // mm
+
+    const timestampPrefix = `${year}${month}${day}${hours}${minutes}`;
+    const autoId = collectionRef.doc().id; // Generate a Firestore auto-ID
+
+    return `${timestampPrefix}-${autoId}`;
+}
 
 // --- Helper Functions (Adapted from test script) ---
 
