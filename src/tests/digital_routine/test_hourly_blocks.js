@@ -3,7 +3,7 @@
 // 필요한 함수 및 Firebase 설정 import
 // 주의: 이 테스트 스크립트를 실행하려면 백그라운드 스크립트 환경이나
 // 유사한 환경(chrome API 및 모듈 import 가능)에서 실행해야 할 수 있습니다.
-import { db, collection, query, where, getDocs, orderBy } from '../../firebase-config.js'; // 경로 수정됨
+// import { db, collection, query, where, getDocs, orderBy } from '../../firebase-config.js'; // 사용되지 않으므로 주석 처리
 import { calculateMajorCategoryForBlock, get10MinBlockIndex, get10MinBlockTimeRange, BLOCKS_PER_DAY } from '../features/digital_routine/routineCalculator.js'; // 경로 수정됨
 import { getFocusSessionsByPeriod } from '../../background.js'; // 경로 수정됨
 

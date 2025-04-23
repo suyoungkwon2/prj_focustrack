@@ -779,11 +779,11 @@ async function updateHourlyBlocksForSession(session, userUUID) {
     // 영향을 받는 모든 블록 인덱스 계산 (하루 경계를 넘어갈 수 있음)
     const affectedIndices = [];
     let currentIndex = startBlockIndex;
-    while (true) {
+    do {
       affectedIndices.push(currentIndex);
       if (currentIndex === endBlockIndex) break;
       currentIndex = (currentIndex + 1) % BLOCKS_PER_DAY; // 다음 블록으로 이동 (순환)
-    }
+    } while (currentIndex !== startBlockIndex); // 시작 인덱스로 돌아오면 종료 (무한 루프 방지)
 
     console.log('[HourlyBlocks] Affected block indices:', affectedIndices);
 
