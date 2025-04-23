@@ -100,7 +100,7 @@ export function calculateMajorCategoryForBlock(blockIndex, sessions, referenceDa
     const category = session.summaryCategory;
 
     // Only consider relevant categories
-    if (categoryDurations.hasOwnProperty(category)) {
+    if (Object.prototype.hasOwnProperty.call(categoryDurations, category)) {
       const durationInBlock = calculateDurationInBlock(sessionStartMs, sessionEndMs, blockStartTime, blockEndTime);
       if (durationInBlock > 0) {
         categoryDurations[category] += durationInBlock;
