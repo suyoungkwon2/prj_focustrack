@@ -6,7 +6,7 @@ admin.initializeApp();
 const db = admin.firestore(); // Firestore 인스턴스
 
 // --- 상수 정의 ---
-const GROWTH_SESSION_THRESHOLD = 30; // 분류를 시작할 Growth 세션 개수 임계값
+// const GROWTH_SESSION_THRESHOLD = 30; // 분류를 시작할 Growth 세션 개수 임계값 (현재 사용 안함)
 
 // --- Google AI 설정 ---
 let genAI;
@@ -197,7 +197,7 @@ async function getGrowthSessionsData(userId, count) {
   functions.logger.log(`User ${userId}: Fetching latest ${count} 'Growth' sessions...`);
   const sessions = [];
   try {
-    const sessionsRef = db.collection(`users/${userId}/focusSessions`);
+    // const sessionsRef = db.collection(`users/${userId}/focusSessions`); // 변수 현재 사용 안함
     const q = admin.firestore() // admin.firestore() 사용
       .collection(`users/${userId}/focusSessions`)
       .where("summaryCategory", "==", "Growth")

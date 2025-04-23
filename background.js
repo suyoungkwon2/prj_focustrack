@@ -784,11 +784,11 @@ async function getFocusSessionsByPeriod(userId, startDate, endDate) {
       for (let i = 0; i < 6; i++) {
         // Calculate the index, handling wrap-around midnight (0 -> 143)
         let blockIndexToCheck = (currentBlockIndex - i + BLOCKS_PER_DAY) % BLOCKS_PER_DAY; 
-        const blockTimeRange = get10MinBlockTimeRange(blockIndexToCheck, now); // Need helper function visible or copied
+        // Use the imported get10MinBlockTimeRange
+        const blockTimeRange = get10MinBlockTimeRange(blockIndexToCheck, now); 
 
-        // Need get10MinBlockTimeRange here, let's copy it from calculator or make it exportable
-        // For now, just log the index
-        console.log(`[TEMP TEST] --- Checking Block Index: ${blockIndexToCheck} ---`);
+        // Log the time range for debugging (uses the previously unused variable)
+        console.log(`[TEMP TEST] --- Checking Block Index: ${blockIndexToCheck} (${blockTimeRange.blockStartTime.toLocaleTimeString()} - ${blockTimeRange.blockEndTime.toLocaleTimeString()}) ---`);
         const majorCategory = calculateMajorCategoryForBlock(blockIndexToCheck, sessions, now);
         console.log(`[TEMP TEST] ✅ Major category for block ${blockIndexToCheck}: ${majorCategory}`);
       }
