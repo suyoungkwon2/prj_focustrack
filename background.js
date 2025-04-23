@@ -1,6 +1,10 @@
 // background.js
-import { db, collection, addDoc, doc, updateDoc } from './firebase-config.js';
+import { db, collection, addDoc, doc, updateDoc, query, where, getDocs, orderBy } from './firebase-config.js';
 import { analyzeYouTubeVideo, isExtractableUrl } from './youtubedataextraction/youtubedataextraction.js';
+// import { getFocusSessionsByPeriod } from './src/features/digital_routine/firebaseUtils.js'; // Keep this commented for now
+// import { calculateMajorCategoryForBlock } from './src/features/digital_routine/routineCalculator.js'; // Keep this commented for now
+
+console.log("Background script loaded"); // Simplified log
 
 let lastActivityTime = Date.now();
 let activeStartTime = null;
@@ -677,3 +681,103 @@ setInterval(() => {
     activeStartTime = null;
   }
 }, 5000);
+
+// ---- PASTE getFocusSessionsByPeriod function here ----
+/**
+ * Fetches focus sessions for a given user within a specified time period.
+ * (Now defined directly in background.js)
+ * Assumes startTime and endTime in Firestore are stored as numerical timestamps (e.g., Date.now()).
+ * @param {string} userId - The user's UUID.
+ * @param {Date} startDate - The start date of the period.
+ * @param {Date} endDate - The end date of the period.
+ * @returns {Promise<Array<object>|null>} A promise that resolves with an array of session objects 
+ *                                         (including firebaseId), or null if an error occurs.
+ */
+async function getFocusSessionsByPeriod(userId, startDate, endDate) {
+  if (!userId || !startDate || !endDate) {
+    console.error("[getFocusSessionsByPeriod] Error: Missing required parameters (userId, startDate, endDate).");
+    return null;
+  }
+
+  const startTimeMs = startDate.getTime();
+  const endTimeMs = endDate.getTime();
+
+  console.log(`[getFocusSessionsByPeriod] Fetching sessions for user ${userId} between ${startDate.toISOString()} (${startTimeMs}) and ${endDate.toISOString()} (${endTimeMs})`);
+
+  try {
+    const sessionsRef = collection(db, `users/${userId}/focusSessions`);
+    const q = query(sessionsRef, 
+                    where('startTime', '>=', startTimeMs), 
+                    where('startTime', '<=', endTimeMs), 
+                    orderBy('startTime', 'asc'));
+
+    const querySnapshot = await getDocs(q);
+
+    if (querySnapshot.empty) {
+      console.log(`[getFocusSessionsByPeriod] No sessions found for user ${userId} in the specified period.`);
+      return [];
+    }
+
+    const sessions = [];
+    querySnapshot.forEach((doc) => {
+      sessions.push({
+        firebaseId: doc.id,
+        ...doc.data()
+      });
+    });
+
+    console.log(`[getFocusSessionsByPeriod] Successfully fetched ${sessions.length} sessions from Firestore.`);
+    return sessions;
+
+  } catch (error) {
+    console.error(`[getFocusSessionsByPeriod] Error fetching sessions from Firestore for user ${userId}:`, error);
+    if (error.code === 'failed-precondition') {
+        console.error("[getFocusSessionsByPeriod] Firestore query failed likely due to a missing index. Please check your Firestore console.");
+    }
+    return null;
+  }
+}
+// ---- END getFocusSessionsByPeriod function ----
+
+// --- TEMPORARY TEST CODE at the end of background.js --- 
+// Uncomment the test code block
+(async () => {
+  console.log("[TEMP TEST] Starting test (getFocusSessionsByPeriod defined locally)...");
+  await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2s
+
+  try {
+    // Get User UUID
+    const { userUUID } = await chrome.storage.local.get(['userUUID']);
+    if (!userUUID) {
+      console.error("[TEMP TEST] Failed to get User UUID.");
+      return;
+    }
+    console.log("[TEMP TEST] User UUID:", userUUID);
+
+    // Define test period (e.g., last 24 hours)
+    const endDate = new Date();
+    const startDate = new Date(endDate.getTime() - 24 * 60 * 60 * 1000); 
+    console.log("[TEMP TEST] Test period:", startDate.toISOString(), "to", endDate.toISOString());
+
+    // Call the locally defined getFocusSessionsByPeriod
+    console.log("[TEMP TEST] Calling locally defined getFocusSessionsByPeriod...");
+    const sessions = await getFocusSessionsByPeriod(userUUID, startDate, endDate);
+
+    // Log results
+    if (sessions === null) {
+      console.error("[TEMP TEST] ❌ getFocusSessionsByPeriod returned null.");
+    } else {
+      console.log(`[TEMP TEST] ✅ Fetched ${sessions.length} sessions.`);
+      if (sessions.length > 0) {
+          console.log("[TEMP TEST] Example session:", sessions[0]);
+      }
+      // Log about routineCalculator still commented out
+      console.log("[TEMP TEST] Skipping major category calculation as routineCalculator is not imported."); 
+    }
+  } catch (error) {
+    console.error("[TEMP TEST] ❌ Error during test execution:", error);
+  }
+  console.log("[TEMP TEST] Test execution finished.");
+})();
+// */ // Ensure the comment-out block markers are removed if they were there
+// --- END TEMPORARY TEST CODE ---
