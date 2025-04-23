@@ -11,7 +11,7 @@ function reportActivity(eventType) {
   }
 }
 
-/* // Comment out the unused function
+/* // Uncomment the image extraction function
 function extractImportantImages() {
   const images = Array.from(document.querySelectorAll('img')).filter(img => {
     // 최소 크기 이상의 이미지만 수집 (작은 아이콘 제외)
