@@ -1,6 +1,17 @@
 // Firebase 초기화
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js';
-import { getFirestore, collection, addDoc, doc, updateDoc } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js';
+// Import all needed Firestore functions here
+import { 
+    getFirestore, 
+    collection, 
+    addDoc, 
+    doc, 
+    updateDoc, 
+    query, 
+    where, 
+    getDocs, 
+    orderBy 
+} from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js';
 
 // 개발 환경 설정
 const devConfig = {
@@ -35,4 +46,15 @@ const firebaseConfig = isProduction ? prodConfig : devConfig;
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 
-export { db, collection, addDoc, doc, updateDoc };
+// Export db and all the functions needed by other modules
+export { 
+    db, 
+    collection, 
+    addDoc, 
+    doc, 
+    updateDoc, 
+    query, 
+    where, 
+    getDocs, 
+    orderBy 
+};
