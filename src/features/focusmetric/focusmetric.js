@@ -224,12 +224,12 @@ function calculateWLR(sessions) {
 function calculateFocusScore(sf, cfd, wlr) {
     console.log("--- Calculating Final Focus Score ---");
 
-    // 1. Normalize SF (Lower is better, target 0, cap at 15)
-    const normalizedSF = Math.max(0, 1 - (sf / 15));
+    // 1. Normalize SF (Lower is better, target 0, cap at 8)
+    const normalizedSF = Math.max(0, 1 - (sf / 8));
     console.log(`  Raw SF: ${sf}, Normalized SF: ${normalizedSF.toFixed(2)}`);
 
-    // 2. Normalize CFD (Higher is better, target 1500s/25min, cap at 1)
-    const normalizedCFD = Math.min(1, cfd / 1500);
+    // 2. Normalize CFD (Higher is better, target 3000s/50min, cap at 1)
+    const normalizedCFD = Math.min(1, cfd / 3000);
     console.log(`  Raw CFD: ${cfd.toFixed(2)}s, Normalized CFD: ${normalizedCFD.toFixed(2)}`);
 
     // 3. Normalize WLR (Higher is better, target 5.0, cap at 1)
@@ -251,24 +251,24 @@ async function runFocusMetricCalculation(userId) {
     try {
         // --- Define Time Window --- 
         const currentTime = Date.now(); // Use the actual current time
-        const thirtyMinutesInMillis = 30 * 60 * 1000;
-        const windowEndTime = currentTime; // The end of the window is the current time
-        const windowStartTime = windowEndTime - thirtyMinutesInMillis; // The start is 30 mins before
+        const twoHoursInMillis = 120 * 60 * 1000; // Changed from 30 to 120 minutes
+        const windowEndTime = currentTime;
+        const windowStartTime = windowEndTime - twoHoursInMillis;
 
         const windowEndTimeFormatted = new Date(windowEndTime).toLocaleString();
         const windowStartTimeFormatted = new Date(windowStartTime).toLocaleString();
-        console.log(`Calculating metrics for time window: ${windowStartTimeFormatted} to ${windowEndTimeFormatted} (last 30 minutes)`);
+        console.log(`Calculating metrics for time window: ${windowStartTimeFormatted} to ${windowEndTimeFormatted} (last 2 hours)`);
         // --------------------------
 
         // Phase 1: Fetch Data (all sessions for user)
         const allFetchedSessions = await fetchUserSessions(userId);
         console.log(`Fetched ${allFetchedSessions.length} total sessions for user ${userId}.`);
 
-        // Filter sessions to only include those within the defined 30-minute window
+        // Filter sessions to only include those within the defined 2-hour window
         const sessionsInWindow = allFetchedSessions.filter(s => 
             s.startTime >= windowStartTime && s.startTime < windowEndTime 
         );
-        console.log(`Found ${sessionsInWindow.length} sessions within the last 30 minutes.`);
+        console.log(`Found ${sessionsInWindow.length} sessions within the last 2 hours.`);
 
         // Proceed only if there are sessions in the window
         if (sessionsInWindow.length > 0) {
@@ -297,7 +297,7 @@ async function runFocusMetricCalculation(userId) {
             console.log(`\n>>> Final Focus Score: ${(focusScore * 100).toFixed(1)}% <<<\n`);
 
         } else {
-            console.log("No sessions found in the last 30 minutes. No metrics calculated.");
+            console.log("No sessions found in the last 2 hours. No metrics calculated.");
         }
     } catch (error) {
         console.error(`Failed to calculate focus metric for user ${userId}:`, error);
