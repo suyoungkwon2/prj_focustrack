@@ -11,6 +11,7 @@ function reportActivity(eventType) {
   }
 }
 
+/* // Uncomment the image extraction function
 function extractImportantImages() {
   const images = Array.from(document.querySelectorAll('img')).filter(img => {
     // 최소 크기 이상의 이미지만 수집 (작은 아이콘 제외)
@@ -25,6 +26,7 @@ function extractImportantImages() {
   
   return images.slice(0, 5); // 최대 5개 이미지만 저장
 }
+*/
 
 ["mousemove", "keydown", "click"].forEach((event) => {
   document.addEventListener(event, () => reportActivity(event), { passive: true });
