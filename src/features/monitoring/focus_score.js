@@ -1,29 +1,10 @@
-// Phase 1: Firebase Connection and Data Fetching (Admin SDK)
-import { initializeApp, cert } from 'firebase-admin/app';
-import { getFirestore } from 'firebase-admin/firestore';
-
-// Import the service account key using require
-import { createRequire } from 'module';
-const require = createRequire(import.meta.url);
-const serviceAccount = require('./focustrack-3ba34-firebase-adminsdk-fbsvc-dc41ebc2c4.json');
-
-// Initialize Firebase Admin
-initializeApp({
-  credential: cert(serviceAccount)
-});
-
-// Get Firestore database instance
-const db = getFirestore();
-
-// --- Specify the User ID to fetch sessions for ---
-const userIdToFetch = "750fb1af-e870-4a34-9b3e-82c9cdc5cdea";
-// -------------------------------------------------
+// Removed Firebase Admin SDK initialization and service account import
 
 // Allowed categories for focus metric calculation
 const ALLOWED_CATEGORIES = ['Growth', 'Daily Life', 'Entertainment'];
 
 // Fetch and filter sessions for a specific user from Firebase
-async function fetchUserSessions(userId) {
+async function fetchUserSessions(db, userId) {
     try {
         const collectionPath = `users/${userId}/focusSessions`;
         console.log(`Fetching sessions from path: ${collectionPath}...`);
@@ -246,10 +227,18 @@ function calculateFocusScore(sf, cfd, wlr) {
     return focusScore;
 }
 
-// --- Main Execution Logic ---
-async function runFocusMetricCalculation(userId) {
+// --- Main Exported Function ---
+/**
+ * Fetches user sessions for the last 2 hours, calculates SF, CFD, WLR,
+ * and the final Focus Score. Logs the process and returns the score.
+ *
+ * @param {FirebaseFirestore.Firestore} db - The initialized Firestore database instance.
+ * @param {string} userId - The ID of the user for whom to calculate the score.
+ * @returns {Promise<number|null>} The calculated focus score (0-1 range), or null if no sessions found.
+ */
+export async function calculateAndLogFocusScore(db, userId) {
     try {
-        // --- Define Time Window --- 
+        // --- Define Time Window ---
         const currentTime = Date.now(); // Use the actual current time
         const twoHoursInMillis = 120 * 60 * 1000; // Changed from 30 to 120 minutes
         const windowEndTime = currentTime;
@@ -257,16 +246,17 @@ async function runFocusMetricCalculation(userId) {
 
         const windowEndTimeFormatted = new Date(windowEndTime).toLocaleString();
         const windowStartTimeFormatted = new Date(windowStartTime).toLocaleString();
-        console.log(`Calculating metrics for time window: ${windowStartTimeFormatted} to ${windowEndTimeFormatted} (last 2 hours)`);
+        console.log(`Calculating Focus Score for user ${userId} in window: ${windowStartTimeFormatted} to ${windowEndTimeFormatted} (last 2 hours)`);
         // --------------------------
 
         // Phase 1: Fetch Data (all sessions for user)
-        const allFetchedSessions = await fetchUserSessions(userId);
+        // Pass db and userId to fetchUserSessions
+        const allFetchedSessions = await fetchUserSessions(db, userId);
         console.log(`Fetched ${allFetchedSessions.length} total sessions for user ${userId}.`);
 
         // Filter sessions to only include those within the defined 2-hour window
-        const sessionsInWindow = allFetchedSessions.filter(s => 
-            s.startTime >= windowStartTime && s.startTime < windowEndTime 
+        const sessionsInWindow = allFetchedSessions.filter(s =>
+            s.startTime >= windowStartTime && s.startTime < windowEndTime
         );
         console.log(`Found ${sessionsInWindow.length} sessions within the last 2 hours.`);
 
@@ -275,7 +265,7 @@ async function runFocusMetricCalculation(userId) {
             console.log("Sample session data (first in window):", JSON.stringify(sessionsInWindow[0], null, 2));
 
             // --- Log relevant fields for all processed sessions in the window ---
-            console.log("\n--- Processed Session Data in Window (ID, StartTime, Duration, Category) ---");
+            console.log("--- Processed Session Data in Window (ID, StartTime, Duration, Category) ---");
             sessionsInWindow.forEach(s => {
                 console.log(`ID: ${s.id}, Start: ${s.startTime}, Duration: ${s.duration || 0}s, Category: ${s.summaryCategory}`);
             });
@@ -285,7 +275,7 @@ async function runFocusMetricCalculation(userId) {
             // Phase 2: Calculate Components using only sessions in the window
             const switchFrequency = calculateSwitchFrequency(sessionsInWindow);
             console.log("Calculated Switch Frequency (SF):", switchFrequency);
-            
+
             const continuousFocusDuration = calculateCFD(sessionsInWindow);
             console.log("Calculated Continuous Focus Duration (CFD - average seconds):", continuousFocusDuration.toFixed(2));
 
@@ -294,15 +284,15 @@ async function runFocusMetricCalculation(userId) {
 
             // Phase 3: Calculate Final Score
             const focusScore = calculateFocusScore(switchFrequency, continuousFocusDuration, workLeisureRatio);
-            console.log(`\n>>> Final Focus Score: ${(focusScore * 100).toFixed(1)}% <<<\n`);
+            console.log(`>>> Final Focus Score for User ${userId}: ${(focusScore * 100).toFixed(1)}% <<<`);
+            return focusScore; // Return the calculated score
 
         } else {
-            console.log("No sessions found in the last 2 hours. No metrics calculated.");
+            console.log(`No sessions found for user ${userId} in the last 2 hours. No metrics calculated.`);
+            return null; // Return null if no sessions found
         }
     } catch (error) {
-        console.error(`Failed to calculate focus metric for user ${userId}:`, error);
+        console.error(`Failed to calculate focus score for user ${userId}:`, error);
+        throw error; // Re-throw the error for handling by the caller
     }
 }
-
-// Run the calculation for the specified user
-runFocusMetricCalculation(userIdToFetch);

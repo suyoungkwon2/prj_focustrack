@@ -1,8 +1,11 @@
 - Focus Score: 집중력 점수
-- Scoring time frame: every 30mins
+- Scoring time frame: most recent 2 hours / function runs every 30mins
 
-<Formula>
-Focus Score=100×(((log(1+1800))/(log(1+CFD)))×0.5 + ((1+WLR)/WLR)×0.3 − (SF/5)×0.1 − (DS/3) ×0.1)
+<Weight>
+
+SF: 0.4
+CFD: 0.3
+WLR: 0.3
 
 <Variable Explanation>
     1. Switch Frequency (SF)
