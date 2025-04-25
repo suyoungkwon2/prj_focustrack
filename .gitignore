@@ -35,3 +35,10 @@ Thumbs.db
 node_modules/
 *.zip
 .DS_Store
+
+# Firebase Admin SDK key (sensitive)
+src/features/focusmetric/focustrack-3ba34-firebase-adminsdk-fbsvc-dc41ebc2c4.json
+
+# Test files
+src/features/monitoring/test_focusmetric.js
+src/features/monitoring/test_daily_metrics.js
