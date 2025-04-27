@@ -94,7 +94,11 @@ ${JSON.stringify(classificationInput, null, 2)}
 JSON 결과:`;
 
   try {
-    const result = await classificationModel.generateContent(prompt);
+    // AI 호출 시 generationConfig 추가 (temperature 낮춤)
+    const result = await classificationModel.generateContent(
+        { contents: [{ role: "user", parts: [{ text: prompt }] }], 
+          generationConfig: { temperature: 0.2 } 
+        });
     const response = await result.response;
     const text = response.text();
     console.log("Raw classification response:", text);
@@ -134,24 +138,24 @@ async function summarizeGroup(groupIds, allSessions) {
     return null;
   }
 
-  // AI 입력용 데이터 가공 (topic, points, duration 만 포함)
+  // AI 입력용 데이터 가공
   const summarizationInput = groupSessions.map(s => ({
       summaryTopic: s.summaryTopic,
       summaryPoints: s.summaryPoints,
       duration: s.duration
   }));
 
-  const prompt = `다음 세션 정보들을 바탕으로 이 그룹의 핵심 내용을 요약해주세요. 'duration'이 긴 세션의 내용을 중요하게 고려해주세요.
+  const prompt = `Based on the following session details for a group, generate a concise summary, giving more weight to sessions with longer 'duration'.
 
-그룹 세션 정보:
+Group Session Details:
 ${JSON.stringify(summarizationInput, null, 2)}
 
-다음 정보를 생성해주세요:
-- classifiedTopic: 이 그룹의 핵심 주제를 요약하는 간결한 제목 (최대 40자).
-- classifiedSummary: 내용을 요약하는 3-5개의 글머리 기호 목록.
-- classifiedKeywords: 내용을 대표하는 키워드 최대 10개.
+Generate the following information **in English**:
+- classifiedTopic: A concise topic title (max 40 characters) summarizing the group's core theme.
+- classifiedSummary: A summary of the content in 3-5 bullet points.
+- classifiedKeywords: Up to 10 keywords representing the content.
 
-결과는 반드시 다음 JSON 형식으로만 반환해주세요:
+Return the result **only** in the following valid JSON format:
 {
   "classifiedTopic": "...",
   "classifiedSummary": ["...", "..."],
@@ -159,7 +163,11 @@ ${JSON.stringify(summarizationInput, null, 2)}
 }`;
 
   try {
-    const result = await summarizationModel.generateContent(prompt);
+    // AI 호출 시 generationConfig 추가 (temperature 낮춤)
+    const result = await summarizationModel.generateContent(
+        { contents: [{ role: "user", parts: [{ text: prompt }] }], 
+          generationConfig: { temperature: 0.2 } 
+        });
     const response = await result.response;
     const text = response.text();
      console.log("Raw summarization response:", text);
