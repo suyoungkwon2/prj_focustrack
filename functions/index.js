@@ -1,7 +1,9 @@
 const functions = require("firebase-functions");
 const admin = require("firebase-admin");
 const { GoogleGenerativeAI } = require("@google/generative-ai");
-// Add ALL required monitoring functions
+
+//미셸:
+//Add ALL required monitoring functions
 const { calculateAndLogFocusScore } = require("../src/features/monitoring/focus_score.js");
 const { calculateAverageFocus } = require("../src/features/monitoring/average_focus.js");
 const { calculateMaxFocus } = require("../src/features/monitoring/max_focus.js");
@@ -43,7 +45,9 @@ exports.onFocusSessionCreate = functions.firestore
   .onCreate(async (snap, context) => {
     const sessionData = snap.data();
     const userId = context.params.userId;
+//미셸:
     const sessionId = context.params.sessionId; // Keep sessionId for logging if needed
+
 
     // 1. 'Growth' 카테고리인지 확인
     if (sessionData.summaryCategory !== "Growth") {
@@ -102,7 +106,7 @@ exports.onFocusSessionCreate = functions.firestore
     return null; // 함수 정상 종료 (트리거 자체는 성공)
   });
 
-
+//20250426 미셸 Monitoring feature 스케줄 추가 (시작)
 // Scheduled function for Focus Score Calculation
 exports.calculateFocusScoreScheduled = functions.pubsub.schedule('every 30 minutes from 5:00 to 4:59').timeZone('Asia/Seoul')
   .onRun(async (context) => {
@@ -283,6 +287,7 @@ async function processDailyMetricsForUser(userId) {
     }
 }
 
+//20250426 미셸 Monitoring feature 스케줄 추가 (끝)
 
 // --- 분류 및 요약 처리 함수 ---
 async function processClassification(userId) {
