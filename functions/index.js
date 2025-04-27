@@ -230,6 +230,7 @@ exports.calculateDailyMetricsScheduled = functions.pubsub.schedule('every 30 min
 // Helper function to process daily metrics for a single user
 async function processDailyMetricsForUser(userId) {
     functions.logger.log(`Calculating daily metrics for user ${userId}...`);
+    let dateString;
     try {
         // 1. Define the correct daily window (5 AM today to 4:59 AM tomorrow)
         const now = new Date();
@@ -241,7 +242,7 @@ async function processDailyMetricsForUser(userId) {
         const tomorrow459AM = new Date(today5AM);
         tomorrow459AM.setDate(today5AM.getDate() + 1);
         tomorrow459AM.setHours(4, 59, 59, 999);
-        const dateString = today5AM.toISOString().split('T')[0]; // YYYY-MM-DD for the start day
+        dateString = today5AM.toISOString().split('T')[0]; // YYYY-MM-DD for the start day
 
         // 2. Fetch relevant data for the user for that window
         const sessionsSnapshot = await db.collection(`users/${userId}/focusSessions`)
@@ -277,8 +278,41 @@ async function processDailyMetricsForUser(userId) {
         functions.logger.log(`User ${userId}: Saved daily metrics for date ${dateString}.`);
 
     } catch (error) {
-        functions.logger.error(`User ${userId}: Failed to process daily metrics for date ${dateString}:`, error);
-        // Add specific dateString to error log if available
+        // Log the error first, using dateString only if it was assigned
+        const logDateString = dateString || 'unknown-date-error-occurred-early'; // Use a placeholder if dateString is undefined
+        functions.logger.error(`User ${userId}: Failed to process daily metrics for date ${logDateString}:`, error);
+
+         // Attempt to save error state
+         try {
+             let errorDateString = dateString; // Use existing dateString if available
+             let errorDate = null;
+
+             if (!errorDateString) { // If dateString wasn't assigned, calculate it now for saving
+                 const now = new Date();
+                 const today5AM = new Date(now);
+                 today5AM.setHours(5, 0, 0, 0);
+                 if (now < today5AM) { today5AM.setDate(today5AM.getDate() - 1); }
+                 errorDateString = today5AM.toISOString().split('T')[0];
+                 errorDate = today5AM; // Keep the date object
+             }
+
+             const logRef = db.collection(`users/${userId}/dailylog`).doc(errorDateString);
+             const errorData = {
+                 dailyMetrics: { // Ensure this saves under dailyMetrics field
+                     error: error.message || "Calculation failed",
+                     updatedAt: admin.firestore.FieldValue.serverTimestamp()
+                 },
+                 // Only add date field if we have a valid date object
+                 ...(errorDate && { date: admin.firestore.Timestamp.fromDate(errorDate) })
+             };
+             await logRef.set(errorData, { merge: true });
+             functions.logger.log(`User ${userId}: Saved error state for daily metrics on date ${errorDateString}.`);
+
+         } catch (saveError) {
+            // Use the potentially recalculated date string in the error log
+            const finalDateString = dateString || 'unknown-date-error-occurred-early';
+            functions.logger.error(`User ${userId}: Also failed to save error state for daily metrics on date ${finalDateString}:`, saveError);
+         }
     }
 }
 
