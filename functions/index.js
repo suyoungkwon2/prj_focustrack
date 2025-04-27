@@ -1,7 +1,11 @@
 const functions = require("firebase-functions");
 const admin = require("firebase-admin");
 const { GoogleGenerativeAI } = require("@google/generative-ai");
-const { calculateAndLogFocusScore } = require("../src/features/monitoring/focus_score.js"); // Adjust path as needed
+// Add ALL required monitoring functions
+const { calculateAndLogFocusScore } = require("../src/features/monitoring/focus_score.js");
+const { calculateAverageFocus } = require("../src/features/monitoring/average_focus.js");
+const { calculateMaxFocus } = require("../src/features/monitoring/max_focus.js");
+const { calculateTotalBrowsingTime } = require("../src/features/monitoring/total_browsing_time.js");
 
 admin.initializeApp();
 const db = admin.firestore(); // Firestore 인스턴스
@@ -103,12 +107,11 @@ exports.onFocusSessionCreate = functions.firestore
 exports.calculateFocusScoreScheduled = functions.pubsub.schedule('every 30 minutes from 5:00 to 4:59').timeZone('Asia/Seoul')
   .onRun(async (context) => {
       functions.logger.log('Starting scheduled focus score calculation for all users.');
-
       try {
-          // 1. Get all user IDs (Consider efficiency for large scale)
-          // Example: Using userGrowthCounters which might represent active users
-          const countersSnapshot = await db.collection('userGrowthCounters').get();
-          const userIds = countersSnapshot.docs.map(doc => doc.id);
+          // 1. Get all user IDs from the main 'users' collection
+          // Note: This might be inefficient for very large user bases.
+          const usersSnapshot = await db.collection('users').get();
+          const userIds = usersSnapshot.docs.map(doc => doc.id);
 
           if (userIds.length === 0) {
               functions.logger.log('No users found to process for focus score.');
@@ -203,11 +206,11 @@ async function processFocusScoreForUser(userId) {
 exports.calculateDailyMetricsScheduled = functions.pubsub.schedule('every 30 minutes from 5:00 to 4:59').timeZone('Asia/Seoul')
   .onRun(async (context) => {
     functions.logger.log('Starting scheduled daily metrics calculation for all users.');
-
     try {
-        // 1. Get all user IDs (Consider efficiency for large scale)
-        const countersSnapshot = await db.collection('userGrowthCounters').get();
-        const userIds = countersSnapshot.docs.map(doc => doc.id);
+        // 1. Get all user IDs from the main 'users' collection
+        // Note: This might be inefficient for very large user bases.
+        const usersSnapshot = await db.collection('users').get();
+        const userIds = usersSnapshot.docs.map(doc => doc.id);
 
         if (userIds.length === 0) {
             functions.logger.log('No users found to process for daily metrics.');
@@ -232,84 +235,48 @@ async function processDailyMetricsForUser(userId) {
     functions.logger.log(`Calculating daily metrics for user ${userId}...`);
     let dateString;
     try {
-        // 1. Define the correct daily window (5 AM today to 4:59 AM tomorrow)
+        const averageFocus = await calculateAverageFocus(db, userId);
+        const maxFocus = await calculateMaxFocus(db, userId);
+        const totalBrowsingTime = await calculateTotalBrowsingTime(db, userId);
         const now = new Date();
         const today5AM = new Date(now);
         today5AM.setHours(5, 0, 0, 0);
-        if (now < today5AM) { // If current time is before 5 AM, "today" started yesterday
-            today5AM.setDate(today5AM.getDate() - 1);
-        }
-        const tomorrow459AM = new Date(today5AM);
-        tomorrow459AM.setDate(today5AM.getDate() + 1);
-        tomorrow459AM.setHours(4, 59, 59, 999);
-        dateString = today5AM.toISOString().split('T')[0]; // YYYY-MM-DD for the start day
-
-        // 2. Fetch relevant data for the user for that window
-        const sessionsSnapshot = await db.collection(`users/${userId}/focusSessions`)
-            .where('startTime', '>=', admin.firestore.Timestamp.fromDate(today5AM))
-            .where('startTime', '<', admin.firestore.Timestamp.fromDate(tomorrow459AM))
-            .get();
-
-        const sessions = sessionsSnapshot.docs.map(doc => doc.data());
-        functions.logger.log(`User ${userId}: Found ${sessions.length} sessions for daily metrics on ${dateString}.`);
-
-        // 3. TODO: Aggregate metrics
-        let totalFocusDuration = 0;
-        let sessionCount = sessions.length;
-        // Add more aggregations as needed (e.g., average score if scores are stored per session)
-        sessions.forEach(session => {
-            totalFocusDuration += session.duration || 0;
-        });
-
-        // 4. Save/Overwrite the calculated metrics to Firestore for that day
-        const logRef = db.collection(`users/${userId}/dailylog`).doc(dateString);
+        if (now < today5AM) { today5AM.setDate(today5AM.getDate() - 1); }
+        dateString = today5AM.toISOString().split('T')[0];
         const dailyMetricData = {
             dailyMetrics: {
-                totalFocusDuration: totalFocusDuration,
-                sessionCount: sessionCount,
-                // averageScore: calculatedAverage, // Example
+                averageContinuousFocusSeconds: averageFocus,
+                maxContinuousFocusSeconds: maxFocus,
+                totalBrowsingSeconds: totalBrowsingTime,
                 updatedAt: admin.firestore.FieldValue.serverTimestamp()
             },
-            date: admin.firestore.Timestamp.fromDate(today5AM) // Store the date for reference
+            date: admin.firestore.Timestamp.fromDate(today5AM)
         };
-
-        await logRef.set(dailyMetricData, { merge: true }); // Use merge: true to update only metrics
-
-        functions.logger.log(`User ${userId}: Saved daily metrics for date ${dateString}.`);
-
+        const logRef = db.collection(`users/${userId}/dailylog`).doc(dateString);
+        await logRef.set(dailyMetricData, { merge: true });
+        functions.logger.log(`User ${userId}: Saved daily metrics (AvgFocus: ${averageFocus.toFixed(0)}s, MaxFocus: ${maxFocus}s, TotalBrowse: ${totalBrowsingTime}s) for date ${dateString}.`);
     } catch (error) {
-        // Log the error first, using dateString only if it was assigned
-        const logDateString = dateString || 'unknown-date-error-occurred-early'; // Use a placeholder if dateString is undefined
+        const logDateString = dateString || 'unknown-date-error-occurred-early';
         functions.logger.error(`User ${userId}: Failed to process daily metrics for date ${logDateString}:`, error);
-
-         // Attempt to save error state
          try {
-             let errorDateString = dateString; // Use existing dateString if available
+             let errorDateString = dateString;
              let errorDate = null;
-
-             if (!errorDateString) { // If dateString wasn't assigned, calculate it now for saving
+             if (!errorDateString) {
                  const now = new Date();
                  const today5AM = new Date(now);
                  today5AM.setHours(5, 0, 0, 0);
                  if (now < today5AM) { today5AM.setDate(today5AM.getDate() - 1); }
                  errorDateString = today5AM.toISOString().split('T')[0];
-                 errorDate = today5AM; // Keep the date object
+                 errorDate = today5AM;
              }
-
              const logRef = db.collection(`users/${userId}/dailylog`).doc(errorDateString);
              const errorData = {
-                 dailyMetrics: { // Ensure this saves under dailyMetrics field
-                     error: error.message || "Calculation failed",
-                     updatedAt: admin.firestore.FieldValue.serverTimestamp()
-                 },
-                 // Only add date field if we have a valid date object
+                 dailyMetrics: { error: error.message || "Calculation failed", updatedAt: admin.firestore.FieldValue.serverTimestamp() },
                  ...(errorDate && { date: admin.firestore.Timestamp.fromDate(errorDate) })
              };
              await logRef.set(errorData, { merge: true });
              functions.logger.log(`User ${userId}: Saved error state for daily metrics on date ${errorDateString}.`);
-
          } catch (saveError) {
-            // Use the potentially recalculated date string in the error log
             const finalDateString = dateString || 'unknown-date-error-occurred-early';
             functions.logger.error(`User ${userId}: Also failed to save error state for daily metrics on date ${finalDateString}:`, saveError);
          }
