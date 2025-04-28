@@ -42,55 +42,53 @@ exports.processTenMinuteBlocks = onSchedule({
     console.log(`Processing block: ${docId} (${blockStartTime.toISOString()} to ${blockEndTime.toISOString()})`);
 
     try {
-      // 1. 모든 사용자 ID 가져오기
+      // 1. 모든 사용자 ID 가져오기 (수정: users_list 컬렉션 사용)
       let usersSnapshot;
-      const usersRef = db.collection("users"); // 컬렉션 참조 저장
-      console.log(`[DEBUG] Attempting to query path: ${usersRef.path}`); // 경로 로깅 추가
+      const usersListRef = db.collection("users_list"); // 수정: users_list 참조
+      console.log(`[DEBUG] Attempting to query path: ${usersListRef.path}`); // 경로 로깅 수정
 
       try {
-        console.log("[DEBUG] Executing usersRef.get() ...");
-        usersSnapshot = await usersRef.get(); // 기존 코드
-        console.log(`[DEBUG] usersRef.get() executed. Snapshot exists: ${usersSnapshot && usersSnapshot.exists !== undefined}, isEmpty: ${usersSnapshot ? usersSnapshot.empty : 'N/A'}, size: ${usersSnapshot ? usersSnapshot.size : 'N/A'}`); // 스냅샷 상태 로깅 (null 체크 추가)
+        console.log("[DEBUG] Executing usersListRef.get() ...");
+        usersSnapshot = await usersListRef.get(); // 수정: users_list에서 가져오기
+        console.log(`[DEBUG] usersListRef.get() executed. Snapshot exists: ${usersSnapshot && usersSnapshot.exists !== undefined}, isEmpty: ${usersSnapshot ? usersSnapshot.empty : 'N/A'}, size: ${usersSnapshot ? usersSnapshot.size : 'N/A'}`); // 스냅샷 상태 로깅 (null 체크 추가)
 
-        // 스냅샷 내용을 좀 더 자세히 로깅 (문서가 많으면 일부만 로깅될 수 있음)
         if (usersSnapshot && !usersSnapshot.empty) {
-           console.log("[DEBUG] First few user doc IDs found:", usersSnapshot.docs.slice(0, 5).map(d => d.id));
+           console.log("[DEBUG] First few user doc IDs found in users_list:", usersSnapshot.docs.slice(0, 5).map(d => d.id)); // 로그 메시지 수정
         }
 
       } catch (userFetchError) {
-        // 에러 발생 시 더 상세하게 로깅
-        console.error("!!! CRITICAL ERROR fetching users collection:", userFetchError);
+        console.error("!!! CRITICAL ERROR fetching users_list collection:", userFetchError); // 로그 메시지 수정
         console.error("Error Code:", userFetchError.code);
         console.error("Error Message:", userFetchError.message);
-        console.error("Error Stack:", userFetchError.stack); // 스택 트레이스 추가
-        // throw new Error(`Could not fetch users collection. Original error: ${userFetchError.message}`); // 일단 throw는 주석 처리하여 함수가 완전히 멈추지 않게 함
+        console.error("Error Stack:", userFetchError.stack);
         return null; // 오류 발생 시 함수 종료
       }
 
-      // usersSnapshot이 실제로 비어 있는지 다시 확인 후 로그
       if (!usersSnapshot || usersSnapshot.empty) {
-          console.warn("[DEBUG] usersSnapshot appears empty or null after get() call.");
-          // 여기에 추가적인 디버깅 시도 가능 (예: 특정 문서 ID로 get 시도)
+          console.warn("[DEBUG] users_list snapshot appears empty or null after get() call."); // 로그 메시지 수정
+          // 특정 사용자 테스트 부분은 users_list에 대한 테스트가 의미 있을 수 있으나, 일단은 유지
           const KNOWN_USER_ID = "9de8ed54-c516-4c45-861d-e219b033bc7c"; // 실제 ID로 교체
-          if (KNOWN_USER_ID) { // ID가 비어있지 않으면 실행
+          if (KNOWN_USER_ID) {
             try {
-              console.log(`[DEBUG] Attempting to get specific user: ${KNOWN_USER_ID}`);
-              const testDoc = await db.collection("users").doc(KNOWN_USER_ID).get();
-              console.log(`[DEBUG] Test get specific user (${KNOWN_USER_ID}): exists=${testDoc.exists}`);
-              if(testDoc.exists) console.log(`[DEBUG] Specific user data snippet:`, JSON.stringify(testDoc.data()).substring(0, 200) + "..."); // 데이터 일부 로깅
+              console.log(`[DEBUG] Attempting to get specific user doc from users_list: ${KNOWN_USER_ID}`); // 로그 메시지 수정
+              const testDoc = await db.collection("users_list").doc(KNOWN_USER_ID).get(); // 수정: users_list에서 확인
+              console.log(`[DEBUG] Test get specific user doc from users_list (${KNOWN_USER_ID}): exists=${testDoc.exists}`); // 로그 메시지 수정
+              if(testDoc.exists) console.log(`[DEBUG] Specific user_list doc data snippet:`, JSON.stringify(testDoc.data()).substring(0, 200) + "..."); // 로그 메시지 수정
             } catch (specificUserError) {
-              console.error(`[DEBUG] Error fetching specific user ${KNOWN_USER_ID}:`, specificUserError);
+              console.error(`[DEBUG] Error fetching specific user doc from users_list ${KNOWN_USER_ID}:`, specificUserError); // 로그 메시지 수정
             }
           } else {
-            console.log("[DEBUG] Skipping specific user test: KNOWN_USER_ID is empty.");
+            console.log("[DEBUG] Skipping specific user_list test: KNOWN_USER_ID is empty."); // 로그 메시지 수정
           }
+          console.log("Processing 0 users due to empty users_list."); // 명확한 로그 추가
+          return null; // 사용자가 없으면 함수 종료
       } else {
-          console.log(`[DEBUG] Successfully obtained non-empty usersSnapshot with size ${usersSnapshot.size}. Proceeding...`);
+          console.log(`[DEBUG] Successfully obtained non-empty users_list snapshot with size ${usersSnapshot.size}. Proceeding...`); // 로그 메시지 수정
       }
 
-
-      const userIds = usersSnapshot ? usersSnapshot.docs.map((doc) => doc.id) : []; // Null 체크 추가
-      console.log(`Processing ${userIds.length} users.`); // 기존 로그 (결과 확인용)
+      // userIds 추출: users_list에서는 문서 ID가 바로 사용자 ID임
+      const userIds = usersSnapshot.docs.map((doc) => doc.id);
+      console.log(`Processing ${userIds.length} users from users_list.`); // 로그 메시지 수정
 
       const promises = userIds.map(async (userId) => {
         // 2. 각 사용자별로 해당 10분간의 세션 가져오기
@@ -148,7 +146,7 @@ exports.processTenMinuteBlocks = onSchedule({
 
       // 모든 사용자 처리 기다리기
       await Promise.all(promises);
-      console.log("processTenMinuteBlocks function finished successfully for all users."); // 로그 메시지 명확화
+      console.log("processTenMinuteBlocks function finished successfully for all users from users_list."); // 로그 메시지 수정
       return null;
 
     } catch (error) {
@@ -198,10 +196,10 @@ exports.aggregateDailyDurations = onSchedule({
 
 
   try {
-    // 1. 모든 사용자 ID 가져오기
-    const usersSnapshot = await db.collection("users").get();
+    // 1. 모든 사용자 ID 가져오기 (수정: users_list 컬렉션 사용)
+    const usersSnapshot = await db.collection("users_list").get();
     const userIds = usersSnapshot.docs.map((doc) => doc.id);
-    console.log(`Found ${userIds.length} users to process for daily aggregation.`);
+    console.log(`Found ${userIds.length} users from users_list to process for daily aggregation.`);
 
     const allPromises = userIds.map(async (userId) => {
       console.log(`Processing daily aggregation for user: ${userId}`);
