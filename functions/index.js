@@ -4,10 +4,10 @@ const { GoogleGenerativeAI } = require("@google/generative-ai");
 
 //미셸:
 //Add ALL required monitoring functions
-const { calculateAndLogFocusScore } = require("../src/features/monitoring/focus_score.js");
-const { calculateAverageFocus } = require("../src/features/monitoring/average_focus.js");
-const { calculateMaxFocus } = require("../src/features/monitoring/max_focus.js");
-const { calculateTotalBrowsingTime } = require("../src/features/monitoring/total_browsing_time.js");
+const { calculateAndLogFocusScore } = require("./lib/monitoring/focus_score.js");
+const { calculateAverageFocus } = require("./lib/monitoring/average_focus.js");
+const { calculateMaxFocus } = require("./lib/monitoring/max_focus.js");
+const { calculateTotalBrowsingTime } = require("./lib/monitoring/total_browsing_time.js");
 
 //멜:
 // v2 Firestore 트리거 import 추가
@@ -16,6 +16,9 @@ const { onDocumentCreated } = require("firebase-functions/v2/firestore");
 const { defineString } = require("firebase-functions/params");
 // Gemini API 키 파라미터 정의
 const geminiApiKeyParam = defineString("GEMINI_API_KEY");
+
+// V2 스케줄러 import 추가
+const { onSchedule } = require("firebase-functions/v2/scheduler"); 
 
 admin.initializeApp();
 // 추가된 로그: 초기화 확인 및 프로젝트 ID 로깅 (내용 약간 수정)
@@ -31,8 +34,9 @@ const db = admin.firestore(); // Firestore 인스턴스
 
 // 멜 추가된 로그: Firestore 인스턴스 확인
 if (db) {
-  console.log("Firestore instance obtained su1ccessfully.");
-  // --- 추가: 초기화 직후 users 컬렉션 읽기 테스트 ---
+  console.log("Firestore instance obtained successfully.");
+  // --- 삭제: 초기화 직후 users 컬렉션 읽기 테스트 제거 ---
+  /*
   db.collection("users").limit(1).get()
     .then(snapshot => {
       console.log(`[Index.js Test Read] Successfully attempted to read 'users'. Found ${snapshot.docs.length} documents (limit 1).`);
@@ -40,6 +44,7 @@ if (db) {
     .catch(err => {
       console.error("[Index.js Test Read] Error reading 'users' collection immediately after init:", err);
     });
+  */
   // --- 테스트 코드 끝 ---
 } else {
   console.error("Failed to obtain Firestore instance!");
@@ -66,7 +71,7 @@ function initializeGeminiClient() {
     }
     genAI = new GoogleGenerativeAI(googleApiKey);
     classificationModel = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
-    summarizationModel = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+    summarizationModel = genAI.getGenerativeAI(googleApiKey);
     console.log("GoogleGenerativeAI initialized successfully at runtime.");
     return true; // 초기화 성공
   } catch (error) {
@@ -154,14 +159,16 @@ exports.onFocusSessionCreate = onDocumentCreated("users/{userId}/focusSessions/{
   });
 
 //20250426 미셸 Monitoring feature 스케줄 추가 (시작)
-// Scheduled function for Focus Score Calculation
-exports.calculateFocusScoreScheduled = functions.pubsub.schedule('every 30 minutes from 5:00 to 4:59').timeZone('Asia/Seoul')
-  .onRun(async (context) => {
+// Scheduled function for Focus Score Calculation (수정: v2 onSchedule 사용)
+exports.calculateFocusScoreScheduled = onSchedule({
+  region: "us-central1", // 또는 원하는 리전
+  schedule: 'every 30 minutes from 5:00 to 4:59',
+  timeZone: 'Asia/Seoul'
+}, async (event) => { // context -> event 로 변경
       functions.logger.log('Starting scheduled focus score calculation for all users.');
       try {
-          // 1. Get all user IDs from the main 'users' collection
-          // Note: This might be inefficient for very large user bases.
-          const usersSnapshot = await db.collection('users').get();
+          // 멜 수정: users 컬렉션 대신 users_list 사용
+          const usersSnapshot = await db.collection('users_list').get(); 
           const userIds = usersSnapshot.docs.map(doc => doc.id);
 
           if (userIds.length === 0) {
@@ -252,15 +259,17 @@ async function processFocusScoreForUser(userId) {
 }
 
 
-// Scheduled function for Daily Metrics
+// Scheduled function for Daily Metrics (수정: v2 onSchedule 사용)
 // Updated schedule to run every 30 mins starting at 5 AM
-exports.calculateDailyMetricsScheduled = functions.pubsub.schedule('every 30 minutes from 5:00 to 4:59').timeZone('Asia/Seoul')
-  .onRun(async (context) => {
+exports.calculateDailyMetricsScheduled = onSchedule({
+  region: "us-central1", // 또는 원하는 리전
+  schedule: 'every 30 minutes from 5:00 to 4:59',
+  timeZone: 'Asia/Seoul'
+}, async (event) => { // context -> event 로 변경
     functions.logger.log('Starting scheduled daily metrics calculation for all users.');
     try {
-        // 1. Get all user IDs from the main 'users' collection
-        // Note: This might be inefficient for very large user bases.
-        const usersSnapshot = await db.collection('users').get();
+        // 멜 수정: users 컬렉션 대신 users_list 사용
+        const usersSnapshot = await db.collection('users_list').get(); 
         const userIds = usersSnapshot.docs.map(doc => doc.id);
 
         if (userIds.length === 0) {
@@ -281,14 +290,18 @@ exports.calculateDailyMetricsScheduled = functions.pubsub.schedule('every 30 min
     return null;
   });
 
-// Helper function to process daily metrics for a single user
+// Helper function to process daily metrics for a single user (수정됨)
 async function processDailyMetricsForUser(userId) {
     functions.logger.log(`Calculating daily metrics for user ${userId}...`);
     let dateString;
     try {
+        // 멜 수정: 각 계산 함수 호출 시 db 인스턴스를 첫 번째 인자로 전달
         const averageFocus = await calculateAverageFocus(db, userId);
+        // 멜 수정: 각 계산 함수 호출 시 db 인스턴스를 첫 번째 인자로 전달
         const maxFocus = await calculateMaxFocus(db, userId);
+        // 멜 수정: 각 계산 함수 호출 시 db 인스턴스를 첫 번째 인자로 전달
         const totalBrowsingTime = await calculateTotalBrowsingTime(db, userId);
+
         const now = new Date();
         const today5AM = new Date(now);
         today5AM.setHours(5, 0, 0, 0);

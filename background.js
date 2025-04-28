@@ -1,15 +1,9 @@
 // background.js
-import { db, auth, signInAnonymously, collection, addDoc, doc, updateDoc, query, where, getDocs, orderBy } from './firebase-config.js';
+import { db, auth, signInAnonymously, collection, addDoc, doc, updateDoc, query, where, getDocs, orderBy, setDoc, serverTimestamp } from './firebase-config.js';
+// Firestore 함수들을 직접 가져오도록 수정 (-> 원복)
+// import { serverTimestamp } from 'firebase/firestore'; 
 import { analyzeYouTubeVideo, isExtractableUrl } from './youtubedataextraction/youtubedataextraction.js';
 // import { getFocusSessionsByPeriod } from './src/features/digital_routine/firebaseUtils.js'; // Keep this commented for now
-import { calculateMajorCategoryForBlock, get10MinBlockIndex, get10MinBlockTimeRange, BLOCKS_PER_DAY } from './src/features/digital_routine/routineCalculator.js';
-import { getHourlyBlocks, saveHourlyBlocks } from './src/features/digital_routine/routineStorage.js';
-
-// Check if the import worked
-console.log("Testing calculateMajorCategoryForBlock right after import:", typeof calculateMajorCategoryForBlock);
-console.log("Testing get10MinBlockIndex right after import:", typeof get10MinBlockIndex);
-console.log("Testing get10MinBlockTimeRange right after import:", typeof get10MinBlockTimeRange);
-console.log("Testing BLOCKS_PER_DAY right after import:", typeof BLOCKS_PER_DAY);
 
 console.log("Background script loaded"); // Simplified log
 
@@ -216,6 +210,32 @@ async function saveSessionToFirebase(session) {
     const docRef = await addDoc(userSessionsRef, session); 
     console.log("[FIREBASE] Session saved successfully with ID:", docRef.id, "for user:", firebaseUID);
     
+    // --- '/users_list' 문서 생성 로직 시작 ---
+    // Firestore 저장이 성공한 후에만 실행
+    try {
+      // 멜 수정: 디버깅 로그 추가 (1/3)
+      console.log(`[USER_LIST_DEBUG] Preparing to ensure user document in /users_list.`);
+      console.log(`[USER_LIST_DEBUG] Target Firebase UID: ${firebaseUID}`);
+      const userListRef = doc(db, "users_list", firebaseUID); 
+      const { userUUID: localUUID } = await chrome.storage.local.get(['userUUID']); // 로컬 UUID 다시 가져오기
+      const userListData = { 
+        firebaseAuthUid: firebaseUID, 
+        localUUID: localUUID || 'UUID_NOT_FOUND', // 로컬 UUID 없을 경우 대비
+        createdAt: serverTimestamp() 
+      };
+      // 멜 수정: 디버깅 로그 추가 (2/3)
+      console.log(`[USER_LIST_DEBUG] Data to set:`, JSON.stringify(userListData));
+      
+      await setDoc(userListRef, userListData, { merge: true }); 
+      // 멜 수정: 성공 로그 추가 (3/3)
+      console.log(`[USER_LIST] Successfully ensured user document exists in /users_list for ${firebaseUID}`);
+    } catch (userListError) {
+      console.error(`[USER_LIST] Error ensuring user document in /users_list for ${firebaseUID}:`, userListError);
+      // 에러 발생 시 추가 정보 로깅
+      console.error(`[USER_LIST_DEBUG] Error details: code=${userListError.code}, message=${userListError.message}`);
+    }
+    // --- '/users_list' 문서 생성 로직 끝 ---
+
     // ... (로컬 스토리지 업데이트) ...
     session.firebaseId = docRef.id; // firebaseId 추가
      chrome.storage.local.get(["focusSessions"], (res) => {
@@ -635,14 +655,7 @@ setInterval(() => {
           
           const latestSessionForUpdate = sessions[mergeableSessionIndex !== -1 ? mergeableSessionIndex : sessions.length - 1];
           if (latestSessionForUpdate && latestSessionForUpdate.userUUID) {
-            await updateHourlyBlocksForSession(latestSessionForUpdate, latestSessionForUpdate.userUUID);
-          } else {
-            const { userUUID } = await chrome.storage.local.get(['userUUID']);
-            if (userUUID) {
-              await updateHourlyBlocksForSession(latestSessionForUpdate, userUUID);
-            } else {
-              console.error('[HourlyBlocks] Cannot update hourly blocks, user UUID not found in session or storage.');
-            }
+            // 이전 로직에서 이미 업데이트된 부분이 있으므로 여기서는 추가 작업 필요 없음
           }
         } else {
           const currentUser = await ensureAuthenticated();
@@ -721,20 +734,6 @@ setInterval(() => {
         }
 
         if (sessions.length > 0) {
-            const latestSessionForUpdate = sessions[sessions.length - 1];
-            if (latestSessionForUpdate) {
-                const currentUser = await ensureAuthenticated(); 
-                if (currentUser) {
-                    if (latestSessionForUpdate.userUUID !== currentUser.uid) {
-                        console.warn(`[HourlyBlocks] Correcting userUUID for latest session ${latestSessionForUpdate.id}`);
-                        latestSessionForUpdate.userUUID = currentUser.uid;
-                    }
-                    await updateHourlyBlocksForSession(latestSessionForUpdate, currentUser.uid); 
-                } else {
-                    console.error('[HourlyBlocks] Cannot update hourly blocks, user not authenticated.');
-                }
-            }
-
             chrome.storage.local.set({ focusSessions: sessions }, () => {
               console.log("[STORAGE] Sessions saved. Total:", sessions.length);
               if (sessions.length > 0) {
@@ -750,17 +749,9 @@ setInterval(() => {
   }
 }, 5000);
 
-// ---- PASTE getFocusSessionsByPeriod function here ----
-/**
- * Fetches focus sessions for a given user within a specified time period.
- * (Now defined directly in background.js)
- * Assumes startTime and endTime in Firestore are stored as numerical timestamps (e.g., Date.now()).
- * @param {string} userId - The user's UUID.
- * @param {Date} startDate - The start date of the period.
- * @param {Date} endDate - The end date of the period.
- * @returns {Promise<Array<object>|null>} A promise that resolves with an array of session objects 
- *                                         (including firebaseId), or null if an error occurs.
- */
+// --- Digital Routine 관련 함수들 (수정됨: getFocusSessionsByPeriod 만 남김) ---
+
+// getFocusSessionsByPeriod 함수 (변경 없음)
 export async function getFocusSessionsByPeriod(userId, startDate, endDate) {
   if (!userId || !startDate || !endDate) {
     console.error("[getFocusSessionsByPeriod] Error: Missing required parameters (userId, startDate, endDate).");
@@ -805,83 +796,6 @@ export async function getFocusSessionsByPeriod(userId, startDate, endDate) {
     return null;
   }
 }
-// ---- END getFocusSessionsByPeriod function ----
-
-/**
- * 주어진 세션이 포함된 시간 범위에 대해 hourlyBlocks 데이터를 업데이트합니다.
- * @param {object} session - 업데이트할 세션 정보 (startTime, endTime 포함)
- * @param {string} userUUID - 현재 사용자의 UUID
- */
-async function updateHourlyBlocksForSession(session, userUUID) {
-  if (!session || !session.startTime || !session.endTime || !userUUID) {
-    console.error('[HourlyBlocks] Invalid input for updateHourlyBlocksForSession', { session, userUUID });
-    return;
-  }
-
-  console.log(`[HourlyBlocks] Updating for session: ${session.id || 'New Session'} (${formatTime(session.startTime)} - ${formatTime(session.endTime)})`);
-
-  try {
-    const startBlockIndex = get10MinBlockIndex(session.startTime);
-    const endBlockIndex = get10MinBlockIndex(session.endTime);
-
-    // 영향을 받는 모든 블록 인덱스 계산 (하루 경계를 넘어갈 수 있음)
-    const affectedIndices = [];
-    let currentIndex = startBlockIndex;
-    do {
-      affectedIndices.push(currentIndex);
-      if (currentIndex === endBlockIndex) break;
-      currentIndex = (currentIndex + 1) % BLOCKS_PER_DAY; // 다음 블록으로 이동 (순환)
-    } while (currentIndex !== startBlockIndex); // 시작 인덱스로 돌아오면 종료 (무한 루프 방지)
-
-    console.log('[HourlyBlocks] Affected block indices:', affectedIndices);
-
-    // 현재 hourlyBlocks 데이터 가져오기
-    let currentHourlyBlocks = await getHourlyBlocks();
-
-    // 영향을 받는 블록 계산에 필요한 시간 범위 설정 (충분한 여유 포함)
-    // TODO: 좀 더 정확한 시간 범위 계산이 필요할 수 있음. 지금은 하루 전체를 가져옴.
-    const calculationDate = new Date(session.startTime);
-    const startOfDay = new Date(calculationDate);
-    startOfDay.setHours(5, 0, 0, 0); // 오전 5시 기준
-    if (calculationDate.getHours() < 5) {
-      startOfDay.setDate(startOfDay.getDate() - 1); // 전날 5시
-    }
-    const endOfDay = new Date(startOfDay.getTime() + 24 * 60 * 60 * 1000 - 1); // 다음날 4:59:59.999
-
-    console.log('[HourlyBlocks] Fetching sessions for calculation period:', startOfDay.toISOString(), 'to', endOfDay.toISOString());
-
-    // 필요한 세션 데이터 다시 로드 (Firestore 사용)
-    const relevantSessions = await getFocusSessionsByPeriod(userUUID, startOfDay, endOfDay);
-
-    if (relevantSessions === null) {
-      console.error('[HourlyBlocks] Failed to fetch relevant sessions for calculation.');
-      return;
-    }
-    console.log(`[HourlyBlocks] Fetched ${relevantSessions.length} relevant sessions for calculation.`);
-
-    let updated = false;
-    // 영향을 받은 각 블록에 대해 Major Category 재계산
-    for (const index of affectedIndices) {
-      const majorCategory = calculateMajorCategoryForBlock(index, relevantSessions, calculationDate);
-      if (currentHourlyBlocks[index] !== majorCategory) {
-        console.log(`[HourlyBlocks] Updating block ${index}: ${currentHourlyBlocks[index]} -> ${majorCategory}`);
-        currentHourlyBlocks[index] = majorCategory;
-        updated = true;
-      }
-    }
-
-    // 변경된 경우에만 저장
-    if (updated) {
-      await saveHourlyBlocks(currentHourlyBlocks);
-      console.log('[HourlyBlocks] Hourly blocks updated and saved.');
-    } else {
-      console.log('[HourlyBlocks] No changes detected in hourly blocks.');
-    }
-
-  } catch (error) {
-    console.error('[HourlyBlocks] Error updating hourly blocks:', error);
-  }
-}
 
 // --- 스크립트 로드 완료 로그 ---
-console.log("Background script setup complete with Anonymous Auth.");
+console.log("Background script setup complete. Removed hourlyBlocks logic.");

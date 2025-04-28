@@ -10,7 +10,9 @@ import {
     query, 
     where, 
     getDocs, 
-    orderBy 
+    orderBy,
+    serverTimestamp,
+    setDoc
 } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js';
 // Firebase Auth 모듈 import 추가
 import { 
@@ -65,5 +67,7 @@ export {
     query, 
     where, 
     getDocs, 
-    orderBy 
+    orderBy,
+    serverTimestamp, // serverTimestamp export 추가
+    setDoc           // setDoc export 추가
 };
