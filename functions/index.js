@@ -155,7 +155,6 @@ async function processFocusScoreForUser(userId) {
             const scoreData = {
                 latestFocusScore: {
                     score: scoreResult, // The score returned from calculateAndLogFocusScore
-                    message: admin.firestore.FieldValue.delete(), // Explicitly delete message
                     calculatedAt: admin.firestore.FieldValue.serverTimestamp()
                 },
                 date: admin.firestore.Timestamp.fromDate(today5AM) // Store the date for reference
@@ -166,7 +165,7 @@ async function processFocusScoreForUser(userId) {
             // Optionally, save a 'null' score or a status indicating no sessions
              const noScoreData = {
                 latestFocusScore: {
-                    score: null, // Ensure score is explicitly null
+                    score: null,
                     message: "No sessions found in the calculation window.",
                     calculatedAt: admin.firestore.FieldValue.serverTimestamp()
                 },
