@@ -529,17 +529,36 @@ setInterval(() => {
         const localUUID = res.userUUID;
         let mergeableSessionIndex = -1;
         
+        // 병합 가능한 세션 찾기
         for (let i = sessions.length - 1; i >= 0; i--) {
           const session = sessions[i];
-          if (session.url === tabInfo.url && 
-              startTime - session.endTime <= MERGE_WINDOW) {
-            mergeableSessionIndex = i;
-            console.log(`[MERGE CHECK] Found mergeable session at index ${i}: ${session.id}, URL: ${session.url}, Time diff: ${(startTime - session.endTime) / 1000}s`);
-            break;
+          const urlToCompare = tabInfo.url; // 현재 활동의 URL
+
+          // URL이 YouTube 영상 페이지인지 확인하는 함수
+          const isYouTubeVideoPage = (url) => url?.includes("youtube.com/watch?v=") || url?.includes("youtu.be/");
+
+          // 기본 병합 조건 확인
+          const urlsMatch = session.url === urlToCompare;
+          const withinMergeWindow = startTime - session.endTime <= MERGE_WINDOW;
+
+          if (urlsMatch && withinMergeWindow) {
+            // URL이 일치하고 시간 조건 만족 시, YouTube 영상 페이지인지 추가 확인
+            if (isYouTubeVideoPage(urlToCompare)) {
+              // YouTube 영상 페이지 URL인 경우 병합하지 않음
+              console.log(`[MERGE CHECK] Potential merge candidate found at index ${i} for URL ${urlToCompare}, but skipping because it is a YouTube video page.`);
+              // mergeableSessionIndex 를 설정하지 않고 다음 루프로 넘어감 (사실상 병합 건너뛰기)
+            } else {
+              // YouTube 영상 페이지가 아니면 병합 허용
+              mergeableSessionIndex = i;
+              console.log(`[MERGE CHECK] Found mergeable non-YouTube session at index ${i} for URL ${urlToCompare}. Time diff: ${(startTime - session.endTime) / 1000}s`);
+              break; // 가장 최근의 병합 대상 찾음
+            }
           }
         }
         
+        // 병합 또는 새 세션 생성 로직 시작
         if (mergeableSessionIndex !== -1) {
+          // --- 세션 병합 처리 ---
           const mergeableSession = sessions[mergeableSessionIndex];
           console.log("[MERGE] with session:", mergeableSession.id);
           
