@@ -1,5 +1,5 @@
 // background.js
-import { db, collection, addDoc, doc, updateDoc, query, where, getDocs, orderBy } from './firebase-config.js';
+import { db, auth, signInAnonymously, collection, addDoc, doc, updateDoc, query, where, getDocs, orderBy } from './firebase-config.js';
 import { analyzeYouTubeVideo, isExtractableUrl } from './youtubedataextraction/youtubedataextraction.js';
 // import { getFocusSessionsByPeriod } from './src/features/digital_routine/firebaseUtils.js'; // Keep this commented for now
 import { calculateMajorCategoryForBlock, get10MinBlockIndex, get10MinBlockTimeRange, BLOCKS_PER_DAY } from './src/features/digital_routine/routineCalculator.js';
@@ -171,80 +171,107 @@ ${bodyText.slice(0, 10000)}
   }
 }
 
-// Firebase에 세션 저장 함수
-async function saveSessionToFirebase(session) {
+// --- 익명 인증 함수 정의 (다른 함수들보다 먼저) ---
+async function ensureAuthenticated() {
+  // !!! auth 객체가 여기서 사용 가능해야 함 !!!
+  if (auth.currentUser) {
+    console.log("[AUTH] Already authenticated:", auth.currentUser.uid);
+    return auth.currentUser;
+  }
   try {
-    // 사용자 UUID 가져오기
-    const { userUUID } = await chrome.storage.local.get(['userUUID']);
-    if (!userUUID) {
-      console.error("[FIREBASE] No user UUID found");
+    console.log("[AUTH] Attempting anonymous sign-in...");
+    const userCredential = await signInAnonymously(auth);
+    console.log("[AUTH] Signed in anonymously:", userCredential.user.uid);
+    return userCredential.user;
+  } catch (error) {
+    console.error("[AUTH] Anonymous sign-in failed:", error);
+    return null; 
+  }
+}
+
+// --- Firestore 함수 (수정됨) ---
+async function saveSessionToFirebase(session) {
+  let firebaseUID = null; // catch 블록에서도 사용하기 위해 함수 스코프로 이동
+  try {
+    console.log("[DEBUG] Attempting to ensure authentication before saving...");
+    const currentUser = await ensureAuthenticated(); // ensureAuthenticated 호출
+    if (!currentUser) {
+      console.error("[FIREBASE] Authentication failed OR user is null BEFORE saving. Cannot save session.");
+      // auth 객체 상태 로깅 (auth가 import 되었다면 여기서 접근 가능해야 함)
+      console.log("[DEBUG] Current auth state:", auth?.currentUser); 
       return null;
     }
+    firebaseUID = currentUser.uid; // firebaseUID 변수에 할당
+    console.log(`[DEBUG] Authentication ensured. User UID: ${firebaseUID}, isAnonymous: ${currentUser.isAnonymous}`);
 
-    // 사용자별 컬렉션에 저장
-    const userSessionsRef = collection(db, `users/${userUUID}/focusSessions`);
-    const docRef = await addDoc(userSessionsRef, session);
-    console.log("[FIREBASE] Session saved with ID:", docRef.id);
+    const userSessionsRef = collection(db, `users/${firebaseUID}/focusSessions`);
+    console.log(`[DEBUG] Firestore path: users/${firebaseUID}/focusSessions`);
+
+    const { userUUID: localUUID } = await chrome.storage.local.get(['userUUID']);
+    session.userUUID = firebaseUID;  
+    session.localUUID = localUUID;   
     
-    // Firebase 문서 ID를 세션에 저장 (업데이트 용도)
-    session.firebaseId = docRef.id;
+    console.log("[DEBUG] Data to be saved:", JSON.stringify(session));
+
+    const docRef = await addDoc(userSessionsRef, session); 
+    console.log("[FIREBASE] Session saved successfully with ID:", docRef.id, "for user:", firebaseUID);
     
-    // 로컬 스토리지에도 Firebase ID 저장
-    chrome.storage.local.get(["focusSessions"], (res) => {
-      const sessions = res.focusSessions || [];
-      const sessionIndex = sessions.findIndex(s => s.id === session.id);
-      if (sessionIndex !== -1) {
-        sessions[sessionIndex].firebaseId = docRef.id;
-        chrome.storage.local.set({ focusSessions: sessions });
-      }
-    });
-    
+    // ... (로컬 스토리지 업데이트) ...
+    session.firebaseId = docRef.id; // firebaseId 추가
+     chrome.storage.local.get(["focusSessions"], (res) => {
+       const sessions = res.focusSessions || [];
+       const sessionIndex = sessions.findIndex(s => s.id === session.id);
+       if (sessionIndex !== -1) {
+         sessions[sessionIndex].firebaseId = docRef.id;
+         sessions[sessionIndex].userUUID = firebaseUID; 
+         sessions[sessionIndex].localUUID = localUUID; 
+         chrome.storage.local.set({ focusSessions: sessions });
+       }
+     });
+
     return docRef.id;
   } catch (error) {
-    console.error("[FIREBASE] Error saving session:", error);
+    console.error("[FIREBASE] Error saving session:", error); 
+    // 수정: catch 블록에서 auth 대신 firebaseUID 변수 사용
+    console.error("[DEBUG] Error occurred while trying to save for Firebase UID:", firebaseUID); // 에러 발생 시점의 UID 확인 (변수 사용)
+    console.error("[DEBUG] Full error object:", error); 
     return null;
   }
 }
 
-// Firebase 세션 업데이트 함수
 async function updateSessionInFirebase(session) {
-  if (!session.firebaseId) {
-    console.error("[FIREBASE] Cannot update session without firebaseId");
-    return false;
-  }
-  
-  try {
-    // 사용자 UUID 가져오기
-    const { userUUID } = await chrome.storage.local.get(['userUUID']);
-    if (!userUUID) {
-      console.error("[FIREBASE] No user UUID found");
-      return false;
-    }
+   let firebaseUID = session.userUUID; // 업데이트 시에는 세션 데이터의 UID 사용 가정
+   try {
+     if (!session.firebaseId) { /* ... */ }
 
-    // 사용자별 컬렉션에서 문서 참조 생성
-    const sessionRef = doc(db, `users/${userUUID}/focusSessions`, session.firebaseId);
-    
-    // 세션 데이터로 문서 업데이트
-    await updateDoc(sessionRef, {
-      endTime: session.endTime,
-      endTimeFormatted: session.endTimeFormatted,
-      duration: session.duration,
-      sessionType: session.sessionType,
-      eventCount: session.eventCount,
-      summaryTopic: session.summaryTopic,
-      summaryPoints: session.summaryPoints,
-      summaryCategory: session.summaryCategory,
-      segments: session.segments,
-      images: session.images || [],
-      visitCount: session.visitCount || 1
-    });
-    
-    console.log("[FIREBASE] Session updated:", session.firebaseId);
-    return true;
-  } catch (error) {
-    console.error("[FIREBASE] Error updating session:", error);
-    return false;
-  }
+     // 인증 상태 확인 (업데이트 시에도 필요)
+     const currentUser = await ensureAuthenticated();
+     if (!currentUser) { /* ... */ return false; }
+     // 현재 인증된 UID와 세션의 UID가 같은지 확인 (선택적이지만 권장)
+     if (currentUser.uid !== session.userUUID) {
+         console.warn(`[FIREBASE] Mismatch between current auth UID (${currentUser.uid}) and session UID (${session.userUUID}) during update. Using session UID.`);
+         // firebaseUID = currentUser.uid; // 현재 UID를 강제할 수도 있음
+     }
+     firebaseUID = session.userUUID; // 세션의 UID를 기준으로 업데이트
+
+     if (!session.localUUID) { /* ... */ }
+
+     const sessionRef = doc(db, `users/${firebaseUID}/focusSessions`, session.firebaseId);
+     
+     // ... (updateData 준비) ...
+      const updateData = { /* ... */ };
+      if (session.extractionError) { /* ... */ }
+
+
+     await updateDoc(sessionRef, updateData);
+     console.log("[FIREBASE] Session updated:", session.firebaseId, "for user:", firebaseUID);
+     return true;
+   } catch (error) {
+     console.error("[FIREBASE] Error updating session:", error);
+     console.error("[DEBUG] Error occurred while trying to update for Firebase UID:", firebaseUID); // 변수 사용
+     console.error("[DEBUG] Full error object:", error);
+     return false;
+   }
 }
 
 // AI 요약 및 이미지 추출 함수 (재시도 로직 포함)
@@ -468,6 +495,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 });
 
+// 스크립트 시작 시 익명 로그인 시도
+ensureAuthenticated().then(user => {
+  if (user) {
+    console.log("[INIT] Initial anonymous auth successful.");
+  } else {
+    console.error("[INIT] Initial anonymous auth failed.");
+  }
+});
+
 setInterval(() => {
   const now = Date.now();
 
@@ -488,14 +524,11 @@ setInterval(() => {
         title: tab?.title || "Unknown Page"
       };
 
-      // tabId가 없는 경우에도 세션 저장 진행
-      chrome.storage.local.get(["focusSessions"], async (res) => {
+      chrome.storage.local.get(["focusSessions", "userUUID"], async (res) => {
         const sessions = res.focusSessions || [];
-        
-        // 병합 가능한 세션 찾기: 같은 URL의 세션 중에서 최근 10분 이내에 종료된 세션 찾기
+        const localUUID = res.userUUID;
         let mergeableSessionIndex = -1;
         
-        // 세션 배열을 역순으로 순회하여 가장 최근 세션부터 확인
         for (let i = sessions.length - 1; i >= 0; i--) {
           const session = sessions[i];
           if (session.url === tabInfo.url && 
@@ -506,39 +539,30 @@ setInterval(() => {
           }
         }
         
-        // 병합 가능한 세션이 있는 경우
         if (mergeableSessionIndex !== -1) {
           const mergeableSession = sessions[mergeableSessionIndex];
           console.log("[MERGE] with session:", mergeableSession.id);
           
-          // 방문 횟수 증가 (필드가 없으면 1로 초기화)
           mergeableSession.visitCount = (mergeableSession.visitCount || 1) + 1;
           
-          // 시간 업데이트
           mergeableSession.endTime = endTime;
           mergeableSession.endTimeFormatted = formatTime(endTime);
           
-          // 총 지속 시간 합산
           mergeableSession.duration += duration;
           
-          // 이벤트 카운트 합산
           mergeableSession.eventCount.mousemove += eventCounter.mousemove;
           mergeableSession.eventCount.click += eventCounter.click;
           mergeableSession.eventCount.keydown += eventCounter.keydown;
           
-          // 세션 조각 추가
           mergeableSession.segments.push({ start: startTime, end: endTime });
           
-          // Inactive에서 Active로 변경되는 경우 처리
           if (mergeableSession.sessionType === "inactive" && 
               mergeableSession.duration >= ACTIVE_SESSION_THRESHOLD / 1000) {
             console.log("[SESSION] Converting from inactive to active:", mergeableSession.id);
             mergeableSession.sessionType = "active";
             
-            // Tab ID가 있는 경우에만 콘텐츠 추출 시도
             if (tabInfo.id) {
               try {
-                // 콘텐츠 추출 및 AI 요약
                 console.log("[AI] Starting content extraction and summarization");
                 const contentResult = await extractContentAndSummarize(
                   tabInfo.id,
@@ -547,7 +571,6 @@ setInterval(() => {
                 );
                 
                 if (contentResult && contentResult.success) {
-                  // 세션 업데이트
                   mergeableSession.images = contentResult.images || [];
                   mergeableSession.summaryTopic = contentResult.summary.topic || "";
                   mergeableSession.summaryPoints = contentResult.summary.points || [];
@@ -579,7 +602,6 @@ setInterval(() => {
             }
           }
           
-          // Firebase에 업데이트
           if (mergeableSession.firebaseId) {
             await updateSessionInFirebase(mergeableSession);
             console.log("[FIREBASE] Updated session:", mergeableSession.firebaseId);
@@ -592,12 +614,10 @@ setInterval(() => {
                       "Visit count:", mergeableSession.visitCount, 
                       "Segments:", mergeableSession.segments.length);
           
-          // hourlyBlocks 업데이트 로직 호출
           const latestSessionForUpdate = sessions[mergeableSessionIndex !== -1 ? mergeableSessionIndex : sessions.length - 1];
           if (latestSessionForUpdate && latestSessionForUpdate.userUUID) {
             await updateHourlyBlocksForSession(latestSessionForUpdate, latestSessionForUpdate.userUUID);
           } else {
-            // userUUID가 없는 경우에 대한 처리 (예: 로컬에서 UUID 다시 가져오기)
             const { userUUID } = await chrome.storage.local.get(['userUUID']);
             if (userUUID) {
               await updateHourlyBlocksForSession(latestSessionForUpdate, userUUID);
@@ -606,11 +626,18 @@ setInterval(() => {
             }
           }
         } else {
-          // 새 세션 생성
-          const { userUUID } = await chrome.storage.local.get(['userUUID']);
-          const newSession = {
-            id: generateUUID(),
-            userUUID: userUUID,
+          const currentUser = await ensureAuthenticated();
+          if (!currentUser) {
+              console.error("[NEW SESSION] Cannot create session, authentication failed.");
+              activeStartTime = null; 
+              return; 
+          }
+          const firebaseUID = currentUser.uid;
+
+          let newSession = {
+            id: generateUUID(),           
+            userUUID: firebaseUID,        
+            localUUID: localUUID,        
             startTime,
             startTimeFormatted: formatTime(startTime),
             endTime,
@@ -619,7 +646,7 @@ setInterval(() => {
             sessionType,
             url: tabInfo.url,
             title: tabInfo.title,
-            domain: tabInfo.url.split("/")[2] || "unknown",
+            domain: tabInfo.url?.split("/")[2] || "unknown", 
             canTrackActivity: true,
             eventCount: { ...eventCounter },
             summaryTopic: "",
@@ -628,73 +655,75 @@ setInterval(() => {
             segments: [{ start: startTime, end: endTime }],
             images: [],
             visitCount: 1,
-            extractionError: null
+            extractionError: null,
+            firebaseId: null
           };
-          
-          // Active 세션이고 Tab ID가 있는 경우에만 AI 요약 및 이미지 추출 진행
+          console.log("[DEBUG] Initial newSession object created:", newSession.id);
+
           if (sessionType === "active" && tabInfo.id) {
             try {
-              console.log("[NEW SESSION] Active session created, starting AI summarization");
-              
-              // 콘텐츠 추출 및 AI 요약
+              console.log("[AI] Starting content extraction and summarization for new session");
               const contentResult = await extractContentAndSummarize(
                 tabInfo.id,
                 tabInfo.url,
                 tabInfo.title
               );
-              
               if (contentResult && contentResult.success) {
-                // 세션 업데이트
                 newSession.images = contentResult.images || [];
                 newSession.summaryTopic = contentResult.summary.topic || "";
                 newSession.summaryPoints = contentResult.summary.points || [];
                 newSession.summaryCategory = contentResult.summary.category || "";
-                
-                console.log("[NEW SESSION] Summary generated successfully");
-                console.log("[SUMMARY] Topic:", newSession.summaryTopic);
+                console.log("[AI] Summary generated successfully for new session");
               } else {
-                newSession.extractionError = contentResult?.extractionError || {
-                  message: "Failed to extract content",
-                  url: tabInfo.url,
-                  timestamp: new Date().toISOString(),
-                  attempts: 0
-                };
-                console.error("[EXTRACT] Content extraction failed:", newSession.extractionError);
+                newSession.extractionError = contentResult?.extractionError || { message: "Unknown extraction failure" }; 
+                console.error("[AI] Content extraction failed for new session:", newSession.extractionError);
               }
             } catch (error) {
-              newSession.extractionError = {
-                message: error.message || "Unknown error during extraction",
-                url: tabInfo.url,
-                timestamp: new Date().toISOString(),
-                attempts: 0
-              };
-              console.error("[EXTRACT] Error during content extraction:", newSession.extractionError);
+              console.error("[AI] Error during content extraction for new session:", error);
+              newSession.extractionError = { message: error.message || "Unknown error during extraction" };
             }
           } else {
-            console.log("[NEW SESSION] Inactive session or missing tab ID, no AI summarization needed");
+            console.log("[AI] Inactive session or missing tab ID, skipping AI summarization for new session");
           }
-          
-          // 새 세션 저장 - Firebase에 먼저 저장
+
           try {
-            newSession.firebaseId = await saveSessionToFirebase(newSession);
-            console.log("[NEW SESSION] Saved to Firebase:", newSession.firebaseId);
+             console.log("[DEBUG] Saving newSession to Firebase...");
+             const savedFirebaseId = await saveSessionToFirebase(newSession); 
+             if (savedFirebaseId) {
+                 newSession.firebaseId = savedFirebaseId;
+                 sessions.push(newSession);
+                 console.log("[NEW SESSION] Created and saved:", newSession.id, "Firebase ID:", newSession.firebaseId);
+             } else {
+                 console.error("[NEW SESSION] Failed to save session to Firebase (saveSessionToFirebase returned null). Session not added to local storage.");
+             }
           } catch (error) {
-            console.error("[NEW SESSION] Error saving to Firebase:", error);
+              console.error("[NEW SESSION] Error calling saveSessionToFirebase:", error);
           }
-          
-          // 로컬 스토리지에도 저장
-          sessions.push(newSession);
-          
-          console.log("[NEW SESSION] Created:", newSession.id, "Type:", newSession.sessionType);
         }
 
-        // 로컬 스토리지 업데이트
-        chrome.storage.local.set({ focusSessions: sessions }, () => {
-          console.log("[STORAGE] Sessions saved. Total:", sessions.length);
-          // 가장 최근 세션 (새로 생성된 세션 또는 병합된 세션) 로그 출력
-          const latestSession = sessions[sessions.length - 1];
-          console.log("[SESSION PREVIEW]", JSON.stringify(latestSession, null, 2));
-        });
+        if (sessions.length > 0) {
+            const latestSessionForUpdate = sessions[sessions.length - 1];
+            if (latestSessionForUpdate) {
+                const currentUser = await ensureAuthenticated(); 
+                if (currentUser) {
+                    if (latestSessionForUpdate.userUUID !== currentUser.uid) {
+                        console.warn(`[HourlyBlocks] Correcting userUUID for latest session ${latestSessionForUpdate.id}`);
+                        latestSessionForUpdate.userUUID = currentUser.uid;
+                    }
+                    await updateHourlyBlocksForSession(latestSessionForUpdate, currentUser.uid); 
+                } else {
+                    console.error('[HourlyBlocks] Cannot update hourly blocks, user not authenticated.');
+                }
+            }
+
+            chrome.storage.local.set({ focusSessions: sessions }, () => {
+              console.log("[STORAGE] Sessions saved. Total:", sessions.length);
+              if (sessions.length > 0) {
+                  const latestSession = sessions[sessions.length - 1];
+                  console.log("[SESSION PREVIEW]", JSON.stringify(latestSession, (key, value) => key === 'images' ? `[${value?.length || 0} images]` : value, 2));
+              }
+            });
+        }
       });
     });
 
@@ -834,3 +863,6 @@ async function updateHourlyBlocksForSession(session, userUUID) {
     console.error('[HourlyBlocks] Error updating hourly blocks:', error);
   }
 }
+
+// --- 스크립트 로드 완료 로그 ---
+console.log("Background script setup complete with Anonymous Auth.");

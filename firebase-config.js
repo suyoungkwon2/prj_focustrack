@@ -12,6 +12,11 @@ import {
     getDocs, 
     orderBy 
 } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js';
+// Firebase Auth 모듈 import 추가
+import { 
+    getAuth, 
+    signInAnonymously 
+} from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js';
 
 // 개발 환경 설정
 const devConfig = {
@@ -45,10 +50,14 @@ const firebaseConfig = isProduction ? prodConfig : devConfig;
 // Firebase 초기화
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
+// Auth 객체 초기화 추가
+const auth = getAuth(app);
 
-// Export db and all the functions needed by other modules
+// Export db, auth, and all the functions needed by other modules
 export { 
     db, 
+    auth, // auth 객체 export 추가
+    signInAnonymously, // signInAnonymously 함수 export 추가
     collection, 
     addDoc, 
     doc, 

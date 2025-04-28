@@ -82,44 +82,57 @@ export function calculateMajorCategoryForBlock(blockIndex, sessions, referenceDa
   }
 
   const { blockStartTime, blockEndTime } = get10MinBlockTimeRange(blockIndex, referenceDate);
-  
+  // 상세 로깅 추가: 블록 시간 범위
+  console.log(`[CalcMajor][Block ${blockIndex}] Calculating for time range: ${blockStartTime.toLocaleString()} - ${blockEndTime.toLocaleString()}`);
+
   const categoryDurations = {
     Growth: 0,
     DailyLife: 0,
     Entertainment: 0,
-    // N/A or other categories are implicitly handled (duration ignored)
   };
 
-  sessions.forEach(session => {
-    // Ensure session times are numerical timestamps
-    const sessionStartMs = typeof session.startTime === 'number' ? session.startTime : new Date(session.startTime).getTime();
-    // Use endTime if available, otherwise estimate based on duration (assuming duration is in seconds)
-    const sessionEndMs = typeof session.endTime === 'number' ? session.endTime :
-                       (session.duration ? sessionStartMs + (session.duration * 1000) : sessionStartMs); // Fallback to start time if no end/duration
+  // 상세 로깅 추가: 입력 세션 개수
+  console.log(`[CalcMajor][Block ${blockIndex}] Processing ${sessions.length} input sessions...`);
 
+  sessions.forEach((session, idx) => {
+    const sessionStartMs = typeof session.startTime === 'number' ? session.startTime : new Date(session.startTime).getTime();
+    const sessionEndMs = typeof session.endTime === 'number' ? session.endTime :
+                       (session.duration ? sessionStartMs + (session.duration * 1000) : sessionStartMs);
     const category = session.summaryCategory;
 
-    // Only consider relevant categories
+    // 상세 로깅 추가: 각 세션 정보
+    console.log(`[CalcMajor][Block ${blockIndex}] Session #${idx}: Cat='${category}', Start=${new Date(sessionStartMs).toLocaleTimeString()}, End=${new Date(sessionEndMs).toLocaleTimeString()}`);
+
     if (Object.prototype.hasOwnProperty.call(categoryDurations, category)) {
       const durationInBlock = calculateDurationInBlock(sessionStartMs, sessionEndMs, blockStartTime, blockEndTime);
+      // 상세 로깅 추가: 블록 내 지속 시간 계산 결과
+      console.log(`  -> Duration within block: ${(durationInBlock / 1000).toFixed(1)}s`);
       if (durationInBlock > 0) {
         categoryDurations[category] += durationInBlock;
       }
+    } else {
+      // 상세 로깅 추가: 관련 없는 카테고리
+       console.log(`  -> Skipped: Category '${category}' is not relevant.`);
     }
   });
+
+  // 상세 로깅 추가: 카테고리별 합산된 시간 (밀리초)
+  console.log(`[CalcMajor][Block ${blockIndex}] Calculated Durations (ms): Growth=${categoryDurations.Growth}, DailyLife=${categoryDurations.DailyLife}, Entertainment=${categoryDurations.Entertainment}`);
 
   let majorCategory = 'N/A';
   let maxDuration = 0;
 
   for (const category in categoryDurations) {
+    // 상세 로깅 추가: 최대 시간 비교 과정
+    console.log(`  Comparing ${category} (${categoryDurations[category]}ms) with maxDuration (${maxDuration}ms)`);
     if (categoryDurations[category] > maxDuration) {
       maxDuration = categoryDurations[category];
       majorCategory = category;
+      console.log(`    -> New Max: ${majorCategory} (${maxDuration}ms)`);
     }
   }
 
-  // Optional: Log the calculated durations for debugging
-  // console.log(`[Block ${blockIndex}] Durations: Growth=${(categoryDurations.Growth/1000).toFixed(1)}s, DailyLife=${(categoryDurations.DailyLife/1000).toFixed(1)}s, Entertainment=${(categoryDurations.Entertainment/1000).toFixed(1)}s -> Major: ${majorCategory}`);
-
+  // 최종 결과 로깅
+  console.log(`[CalcMajor][Block ${blockIndex}] Final Major Category: ${majorCategory}`);
   return majorCategory;
 } 
