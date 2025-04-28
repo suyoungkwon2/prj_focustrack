@@ -74,17 +74,17 @@
 ### 진행 구조: 단계별 AI 호출 방식 (Multi-Step AI Approach)
 이 방식은 각 AI 작업을 별도의 API 호출로 분리하여 처리하는 구조입니다. 복잡성을 낮추고 각 단계의 결과를 더 명확하게 제어할 수 있다는 장점이 있습니다.
 
-1.  **데이터 준비 (Data Preparation):**
+1.  **데이터 준비 (Data Preparation):**(Done)
     *   트리거: "Growth" 카테고리의 `focusSessions` 항목이 30개 누적되면 이 프로세스를 시작합니다. (Firestore 리스너, 스케줄링된 함수 등 활용)
     *   데이터 로딩: 해당 30개 세션의 `id`, `summaryPoints`, `summaryTopic`, `duration` 데이터를 데이터베이스에서 가져옵니다.
-2.  **1단계: 사이트 분류 (AI Call 1 - Classification)(완료)**
+2.  **1단계: 사이트 분류 (AI Call 1 - Classification)(Done)**
     *   **입력:** 30개 세션의 `id`, `summaryTopic`, `duration` 정보 리스트. (참고: 문서 4.(1)에 따라 `summaryPoints`는 제외)
     *   **AI 프롬프트:**
         *   "다음 세션 목록을 의미론적 유사성을 기반으로 그룹화해주세요."
         *   "각 세션의 `summaryTopic`을 주요 기준으로 사용하되, `duration`이 긴 세션의 내용에 더 높은 가중치를 부여하여 그룹화해주세요."
         *   "결과는 각 그룹에 속하는 세션 `id`들의 리스트 목록으로 반환해주세요. 예: `[[id1, id5, id12], [id2, id8], [id3, id10, id25], ...]`"
     *   **처리:** AI API를 호출하고, 반환된 그룹 목록 (ID 리스트의 리스트)을 파싱합니다.
-3.  **2단계: 그룹별 요약 및 키워드 추출 (AI Call 2 - Summarization per Group)**
+3.  **2단계: 그룹별 요약 및 키워드 추출 (AI Call 2 - Summarization per Group)(Done)**
     *   **처리:** 1단계에서 얻은 각 그룹(`[id1, id5, id12]`, `[id2, id8]`, ...)에 대해 반복 작업을 수행합니다.
     *   **입력 (각 그룹별):** 해당 그룹에 속한 세션들의 `summaryTopic`, `summaryPoints`, `duration` 정보 리스트.
     *   **AI 프롬프트 (각 그룹별):**
@@ -92,11 +92,11 @@
         *   "`duration`이 긴 세션의 내용을 중요하게 고려해주세요."
         *   "결과는 다음 JSON 형식으로 반환해주세요: `{ \"classifiedTopic\": \"...\", \"classifiedSummary\": [\"...", \"...\"], \"classifiedKeywords\": [\"...", ...] }`"
         *   **처리:** 각 그룹별로 AI API를 호출하고, 반환된 JSON 결과를 파싱합니다.
-4.  **데이터 계산 및 조합 (Calculation & Combination):**
+4.  **데이터 계산 및 조합 (Calculation & Combination):**(Done)
     *   **처리:** 각 그룹에 대해 다음 작업을 수행합니다.
         *   `totalDuration`: 해당 그룹에 속한 세션들의 `duration`을 모두 합산합니다.
         *   결합: 1단계의 `list of id`와 2단계의 요약 결과(`classifiedTopic`, `classifiedSummary`, `classifiedKeywords`), 그리고 계산된 `totalDuration`을 하나의 객체로 합칩니다.
-5.  **결과 필터링 및 저장 (Filtering & Storage):**
+5.  **결과 필터링 및 저장 (Filtering & Storage):**(Done)
     *   **처리:**
         *   생성된 모든 그룹 객체들을 `totalDuration` 기준으로 내림차순 정렬합니다.
         *   상위 6개 그룹만 선택합니다.

@@ -1,6 +1,24 @@
 // Firebase 초기화
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js';
-import { getFirestore, collection, addDoc, doc, updateDoc } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js';
+// Import all needed Firestore functions here
+import { 
+    getFirestore, 
+    collection, 
+    addDoc, 
+    doc, 
+    updateDoc, 
+    query, 
+    where, 
+    getDocs, 
+    orderBy,
+    serverTimestamp,
+    setDoc
+} from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js';
+// Firebase Auth 모듈 import 추가
+import { 
+    getAuth, 
+    signInAnonymously 
+} from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js';
 
 // 개발 환경 설정
 const devConfig = {
@@ -34,5 +52,22 @@ const firebaseConfig = isProduction ? prodConfig : devConfig;
 // Firebase 초기화
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
+// Auth 객체 초기화 추가
+const auth = getAuth(app);
 
-export { db, collection, addDoc, doc, updateDoc };
+// Export db, auth, and all the functions needed by other modules
+export { 
+    db, 
+    auth, // auth 객체 export 추가
+    signInAnonymously, // signInAnonymously 함수 export 추가
+    collection, 
+    addDoc, 
+    doc, 
+    updateDoc, 
+    query, 
+    where, 
+    getDocs, 
+    orderBy,
+    serverTimestamp, // serverTimestamp export 추가
+    setDoc           // setDoc export 추가
+};

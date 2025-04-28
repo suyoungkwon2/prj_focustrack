@@ -1,57 +1,113 @@
 const functions = require("firebase-functions");
 const admin = require("firebase-admin");
 const { GoogleGenerativeAI } = require("@google/generative-ai");
-// Add ALL required monitoring functions
-const { calculateAndLogFocusScore } = require("../src/features/monitoring/focus_score.js");
-const { calculateAverageFocus } = require("../src/features/monitoring/average_focus.js");
-const { calculateMaxFocus } = require("../src/features/monitoring/max_focus.js");
-const { calculateTotalBrowsingTime } = require("../src/features/monitoring/total_browsing_time.js");
+
+//미셸:
+//Add ALL required monitoring functions
+const { calculateAndLogFocusScore } = require("./lib/monitoring/focus_score.js");
+const { calculateAverageFocus } = require("./lib/monitoring/average_focus.js");
+const { calculateMaxFocus } = require("./lib/monitoring/max_focus.js");
+const { calculateTotalBrowsingTime } = require("./lib/monitoring/total_browsing_time.js");
+
+//멜:
+// v2 Firestore 트리거 import 추가
+const { onDocumentCreated } = require("firebase-functions/v2/firestore");
+// 파라미터화된 설정 import 추가
+const { defineString } = require("firebase-functions/params");
+// Gemini API 키 파라미터 정의
+const geminiApiKeyParam = defineString("GEMINI_API_KEY");
+
+// V2 스케줄러 import 추가
+const { onSchedule } = require("firebase-functions/v2/scheduler"); 
 
 admin.initializeApp();
+// 추가된 로그: 초기화 확인 및 프로젝트 ID 로깅 (내용 약간 수정)
+console.log("Firebase Admin SDK initialized (v2 check).");
+try {
+  console.log(`Admin SDK Project ID: ${admin.app().options.projectId}`);
+} catch (e) {
+  console.error("Error getting Admin SDK project ID:", e);
+}
+
 const db = admin.firestore(); // Firestore 인스턴스
 
-// --- 상수 정의 ---
-const GROWTH_SESSION_THRESHOLD = 30; // 분류를 시작할 Growth 세션 개수 임계값
 
-// --- Google AI 설정 ---
+// 멜 추가된 로그: Firestore 인스턴스 확인
+if (db) {
+  console.log("Firestore instance obtained successfully.");
+  // --- 삭제: 초기화 직후 users 컬렉션 읽기 테스트 제거 ---
+  /*
+  db.collection("users").limit(1).get()
+    .then(snapshot => {
+      console.log(`[Index.js Test Read] Successfully attempted to read 'users'. Found ${snapshot.docs.length} documents (limit 1).`);
+    })
+    .catch(err => {
+      console.error("[Index.js Test Read] Error reading 'users' collection immediately after init:", err);
+    });
+  */
+  // --- 테스트 코드 끝 ---
+} else {
+  console.error("Failed to obtain Firestore instance!");
+}
+
+// --- 상수 정의 ---
+const GROWTH_SESSION_THRESHOLD = 5; // 분류를 시작할 Growth 세션 개수 임계값 (30 -> 5로 수정)
+
+// --- Google AI 설정 (지연 초기화 방식으로 수정) ---
 let genAI;
 let classificationModel;
 let summarizationModel;
-try {
-  // 환경 변수에서 API 키 가져오기 (배포 전 설정 필요)
-  // 로컬 터미널에서: firebase functions:config:set gemini.key="YOUR_API_KEY"
-  const googleApiKey = functions.config().gemini?.key; // Optional chaining 사용
-  if (!googleApiKey) {
-    console.error("FATAL ERROR: Gemini API Key (functions.config().gemini.key) is not set.");
-    // 실제 배포 시에는 여기서 함수 로드를 멈추는 것이 좋을 수 있습니다.
-    // 하지만 로컬 에뮬레이터 테스트 등을 위해 일단 초기화는 진행합니다.
-    // throw new Error("Gemini API Key is not configured."); // 필요시 에러 발생
-  } else {
+
+function initializeGeminiClient() {
+  // 이미 초기화되었으면 반환
+  if (genAI && classificationModel && summarizationModel) {
+    return true;
+  }
+  try {
+    const googleApiKey = geminiApiKeyParam.value();
+    if (!googleApiKey) {
+      console.error("FATAL ERROR: Gemini API Key (GEMINI_API_KEY parameter) is not set at runtime.");
+      return false; // 초기화 실패
+    }
     genAI = new GoogleGenerativeAI(googleApiKey);
     classificationModel = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
     summarizationModel = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
-    console.log("GoogleGenerativeAI initialized successfully.");
+    console.log("GoogleGenerativeAI initialized successfully at runtime.");
+    return true; // 초기화 성공
+  } catch (error) {
+    console.error("Error initializing GoogleGenerativeAI at runtime:", error);
+    return false; // 초기화 실패
   }
-} catch (error) {
-  console.error("Error initializing GoogleGenerativeAI:", error);
 }
 
+// Digital Routine 함수 import
+const { processTenMinuteBlocks, aggregateDailyDurations } = require("./digitalRoutineFunctions");
 
-// --- Firestore 트리거 함수 ---
-exports.onFocusSessionCreate = functions.firestore
-  .document("users/{userId}/focusSessions/{sessionId}")
-  .onCreate(async (snap, context) => {
-    const sessionData = snap.data();
-    const userId = context.params.userId;
-    const sessionId = context.params.sessionId; // Keep sessionId for logging if needed
+// 멜:v2 구문으로 변경
+// --- Firestore 트리거 함수  ---
+exports.onFocusSessionCreate = onDocumentCreated("users/{userId}/focusSessions/{sessionId}", async (event) => {
+    // event 객체에서 데이터와 파라미터 가져오기
+    const snap = event.data; // onCreate의 경우 event.data는 DocumentSnapshot
+    if (!snap) {
+      console.error("Event data is missing. Cannot process function.");
+      return;
+    }
+    const sessionData = snap.data(); // 생성된 문서 데이터
+    const userId = event.params.userId;
+    const sessionId = event.params.sessionId; // sessionId도 params에서 가져옴
+
+
+//미셸:
+    //(충돌로 주석 처리) const sessionId = context.params.sessionId; // Keep sessionId for logging if needed
+
 
     // 1. 'Growth' 카테고리인지 확인
-    if (sessionData.summaryCategory !== "Growth") {
-      functions.logger.log(`User ${userId}, Session ${context.params.sessionId}: Not a 'Growth' session. Skipping.`);
-      return null; // 'Growth' 아니면 함수 종료
+    if (!sessionData || sessionData.summaryCategory !== "Growth") { // sessionData null 체크 추가
+      functions.logger.log(`User ${userId}, Session ${sessionId}: Not a 'Growth' session or session data invalid. Skipping.`);
+      return null; // 'Growth' 아니거나 데이터 없으면 함수 종료
     }
 
-    functions.logger.log(`User ${userId}, Session ${context.params.sessionId}: 'Growth' session detected. Processing counter.`);
+    functions.logger.log(`User ${userId}, Session ${sessionId}: 'Growth' session detected. Processing counter.`);
 
     // 2. 카운터 처리 (트랜잭션 사용)
     const counterRef = db.collection("userGrowthCounters").doc(userId);
@@ -102,15 +158,17 @@ exports.onFocusSessionCreate = functions.firestore
     return null; // 함수 정상 종료 (트리거 자체는 성공)
   });
 
-
-// Scheduled function for Focus Score Calculation
-exports.calculateFocusScoreScheduled = functions.pubsub.schedule('every 30 minutes from 5:00 to 4:59').timeZone('Asia/Seoul')
-  .onRun(async (context) => {
+//20250426 미셸 Monitoring feature 스케줄 추가 (시작)
+// Scheduled function for Focus Score Calculation (수정: v2 onSchedule 사용)
+exports.calculateFocusScoreScheduled = onSchedule({
+  region: "us-central1", // 또는 원하는 리전
+  schedule: 'every 30 minutes from 5:00 to 4:59',
+  timeZone: 'Asia/Seoul'
+}, async (event) => { // context -> event 로 변경
       functions.logger.log('Starting scheduled focus score calculation for all users.');
       try {
-          // 1. Get all user IDs from the main 'users' collection
-          // Note: This might be inefficient for very large user bases.
-          const usersSnapshot = await db.collection('users').get();
+          // 멜 수정: users 컬렉션 대신 users_list 사용
+          const usersSnapshot = await db.collection('users_list').get(); 
           const userIds = usersSnapshot.docs.map(doc => doc.id);
 
           if (userIds.length === 0) {
@@ -201,15 +259,17 @@ async function processFocusScoreForUser(userId) {
 }
 
 
-// Scheduled function for Daily Metrics
+// Scheduled function for Daily Metrics (수정: v2 onSchedule 사용)
 // Updated schedule to run every 30 mins starting at 5 AM
-exports.calculateDailyMetricsScheduled = functions.pubsub.schedule('every 30 minutes from 5:00 to 4:59').timeZone('Asia/Seoul')
-  .onRun(async (context) => {
+exports.calculateDailyMetricsScheduled = onSchedule({
+  region: "us-central1", // 또는 원하는 리전
+  schedule: 'every 30 minutes from 5:00 to 4:59',
+  timeZone: 'Asia/Seoul'
+}, async (event) => { // context -> event 로 변경
     functions.logger.log('Starting scheduled daily metrics calculation for all users.');
     try {
-        // 1. Get all user IDs from the main 'users' collection
-        // Note: This might be inefficient for very large user bases.
-        const usersSnapshot = await db.collection('users').get();
+        // 멜 수정: users 컬렉션 대신 users_list 사용
+        const usersSnapshot = await db.collection('users_list').get(); 
         const userIds = usersSnapshot.docs.map(doc => doc.id);
 
         if (userIds.length === 0) {
@@ -230,14 +290,18 @@ exports.calculateDailyMetricsScheduled = functions.pubsub.schedule('every 30 min
     return null;
   });
 
-// Helper function to process daily metrics for a single user
+// Helper function to process daily metrics for a single user (수정됨)
 async function processDailyMetricsForUser(userId) {
     functions.logger.log(`Calculating daily metrics for user ${userId}...`);
     let dateString;
     try {
+        // 멜 수정: 각 계산 함수 호출 시 db 인스턴스를 첫 번째 인자로 전달
         const averageFocus = await calculateAverageFocus(db, userId);
+        // 멜 수정: 각 계산 함수 호출 시 db 인스턴스를 첫 번째 인자로 전달
         const maxFocus = await calculateMaxFocus(db, userId);
+        // 멜 수정: 각 계산 함수 호출 시 db 인스턴스를 첫 번째 인자로 전달
         const totalBrowsingTime = await calculateTotalBrowsingTime(db, userId);
+
         const now = new Date();
         const today5AM = new Date(now);
         today5AM.setHours(5, 0, 0, 0);
@@ -283,16 +347,16 @@ async function processDailyMetricsForUser(userId) {
     }
 }
 
+//20250426 미셸 Monitoring feature 스케줄 추가 (끝)
 
 // --- 분류 및 요약 처리 함수 ---
 async function processClassification(userId) {
+  // Gemini 클라이언트 초기화 확인 및 시도
+  if (!initializeGeminiClient()) {
+    functions.logger.error(`User ${userId}: Failed to initialize Google AI SDK. Cannot proceed with classification.`);
+    return;
+  }
   functions.logger.log(`User ${userId}: processClassification started.`);
-
-   // API 키 재확인 (초기화 실패 시)
-   if (!genAI || !classificationModel || !summarizationModel) {
-     functions.logger.error(`User ${userId}: Google AI SDK not initialized correctly. Cannot proceed.`);
-     return;
-   }
 
   // 1. 데이터 가져오기 (최신 Growth 5개로 수정)
   const sessions = await getGrowthSessionsData(userId, 5);
@@ -409,9 +473,13 @@ async function getGrowthSessionsData(userId, count) {
   }
   return sessions;
 }
-
 // 세션 분류 (Cloud Function 버전)
 async function classifySessions(sessionsToClassify) {
+   // Gemini 클라이언트 초기화 확인 및 시도
+   if (!initializeGeminiClient()) {
+     functions.logger.error("Failed to initialize Google AI SDK. Cannot proceed with classification.");
+     return [];
+   }
    functions.logger.log(`Classifying ${sessionsToClassify.length} sessions...`);
    if (!sessionsToClassify || sessionsToClassify.length === 0) return [];
 
@@ -449,6 +517,11 @@ JSON 결과:`;
 
 // 그룹 요약 (Cloud Function 버전)
 async function summarizeGroup(groupIds, allSessions) {
+   // Gemini 클라이언트 초기화 확인 및 시도
+   if (!initializeGeminiClient()) {
+     functions.logger.error(`Failed to initialize Google AI SDK for group [${groupIds.join(', ')}]. Cannot proceed with summarization.`);
+     return null;
+   }
    functions.logger.log(`Summarizing group: [${groupIds.join(', ')}]...`);
    const groupSessions = allSessions.filter(s => groupIds.includes(s.id));
    if (groupSessions.length === 0) return null;
@@ -501,3 +574,8 @@ function calculateTotalDuration(groupIds, allSessions) {
    const groupSessions = allSessions.filter(s => groupIds.includes(s.id));
    return groupSessions.reduce((sum, session) => sum + session.duration, 0);
 }
+
+// Digital Routine 함수 export
+exports.processTenMinuteBlocks = processTenMinuteBlocks;
+// aggregateDailyDurations 함수 추가 export
+exports.aggregateDailyDurations = aggregateDailyDurations;
