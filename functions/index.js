@@ -51,7 +51,7 @@ if (db) {
 }
 
 // --- 상수 정의 ---
-const GROWTH_SESSION_THRESHOLD = 15; // 분류를 시작할 Growth 세션 개수 임계값 (30 -> 15로 수정)
+const GROWTH_SESSION_THRESHOLD = 5; // 분류를 시작할 Growth 세션 개수 임계값 (30 -> 5로 수정)
 
 // --- Google AI 설정 (지연 초기화 방식으로 수정) ---
 let genAI;
@@ -71,7 +71,7 @@ function initializeGeminiClient() {
     }
     genAI = new GoogleGenerativeAI(googleApiKey);
     classificationModel = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
-    summarizationModel = genAI.getGenerativeAI(googleApiKey);
+    summarizationModel = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
     console.log("GoogleGenerativeAI initialized successfully at runtime.");
     return true; // 초기화 성공
   } catch (error) {
