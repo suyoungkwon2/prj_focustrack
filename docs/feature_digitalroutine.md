@@ -1,85 +1,86 @@
 # Digital Routine 기능 이해
 
-1. 목적: 사용자의 하루 동안(24시간)의 웹 브라우징 활동을 카테고리별로 시각화하여 보여주는 기능입니다. 이를 통해 사용자는 자신의 시간 사용 패턴을 직관적으로 파악할 수 있습니다.
+## 1. 목적
+사용자의 하루 동안(오전 5시 ~ 다음 날 오전 5시)의 웹 브라우징 활동을 **10분 단위 블록 시각화**와 **카테고리별 정확한 총 사용 시간**으로 나누어 제공합니다. 이를 통해 시간 사용 패턴 파악 및 활동 시간 분석을 돕습니다.
 
-2. 시각화 방식:
-- 시간 축: 세로축은 시간을 나타냅니다. 하루 전체(24시간)를 나타내며, 오전 5시 부터 시작됩니다. 시간은 1시간 단위로 구분됩니다. 시간 축(세로축)에 표시되는 시간은 05시부터 다음 날 04시까지 입니다.
-- 시간 단위 블록: 각 시간대는 가로로 6개의 블록으로 나뉘어, 총 10분 단위의 활동을 표시합니다. (1시간 = 6블록 * 10분)
-- 색상: 각 10분 블록은 해당 시간 동안 가장 많이 방문한 웹사이트의 카테고리(Growth, Daily Life, Entertainment) 색상으로 표시됩니다. 만약 해당 10분 동안 방문 기록이 없다면 회색으로 표시됩니다.
-    - Growth: #99DAFF
-    - Daily Life: #FFDDAD
-    - Entertainment: #FFD6E8
-    - N/A: #E0E0E0
+## 2. 핵심 기능 및 데이터 흐름
 
-3. 카테고리별 총 시간: 오늘 하루(오전 5시부터 다음 날 오전 5시까지) 동안 각 카테고리(Growth, Daily Life, Entertainment)에 머무른 총 시간이 시간:분:초 (HH:MM:SS) 형식으로 표시됩니다.
+### 가. 10분 블록 데이터 계산 및 저장 (백엔드 - Cloud Functions)
+- **실행 주기:** 매 10분 정각 (예: 10:10, 10:20) Cloud Scheduler에 의해 트리거됩니다.
+- **처리 대상:** 실행 시점 직전 10분 구간 (예: 10:10 실행 시 10:00:00 ~ 10:09:59).
+- **데이터 소스:** Firestore `/users/{userUUID}/focusSessions`에서 해당 10분 구간의 세션 데이터 로드.
+- **계산 로직:**
+    - 로드된 세션 중 `sessionType === 'active'`인 세션만 필터링.
+    - 활성 세션의 `summaryCategory` ('Growth', 'DailyLife', 'Entertainment')별 `duration`(초) 합산.
+- **저장 데이터:**
+    - `tenMinutesDurationGrowth`: 해당 10분간 Growth 카테고리 총 시간(초).
+    - `tenMinutesDurationDailyLife`: 해당 10분간 Daily Life 카테고리 총 시간(초).
+    - `tenMinutesDurationEntertainment`: 해당 10분간 Entertainment 카테고리 총 시간(초).
+- **저장소 및 경로:** Firestore `/users/{userUUID}/tenMinutesBlock/{YYYY-MM-DD_HHMM}` (HHMM은 10분 블록 시작 시간, 예: 10:00 데이터는 _1000).
 
-4. UI 구성 요소:
+### 나. 시각화 (프론트엔드)
+- **데이터 소스:** Firestore `/users/{userUUID}/tenMinutesBlock`에서 해당 날짜(오전 5시 기준)의 10분 블록 데이터(144개) 로드.
+- **Major Category 계산:** 각 10분 블록 문서에 저장된 `tenMinutesDuration...` 값들을 비교하여 가장 큰 값을 가진 카테고리를 해당 블록의 **Major Category**로 결정합니다. (이 계산은 프론트엔드에서 수행)
+- **UI 표시:**
+    - **시간대별 활동 그리드:** 계산된 Major Category에 따라 24x6 그리드의 각 셀을 해당 카테고리 색상으로 표시합니다.
+        - Growth: `#99DAFF`
+        - Daily Life: `#FFDDAD`
+        - Entertainment: `#FFD6E8`
+        - 해당 10분 블록 데이터가 없거나 모든 duration이 0이면 N/A: `#E0E0E0`
+    - **카테고리별 총 시간:** (다. 일별 집계 데이터 활용) 아래에서 설명할 `/users/{userUUID}/dailylog` 데이터를 읽어와 HH:MM:SS 형식으로 표시합니다.
+    - 시간 축: 세로축은 시간을 나타냅니다. 하루 전체(24시간)를 나타내며, 오전 5시 부터 시작됩니다. 시간은 1시간 단위로 구분됩니다. 시간 축(세로축)에 표시되는 시간은 05시부터 다음 날 04시까지 입니다.
+    - 시간 단위 블록: 각 시간대는 가로로 6개의 블록으로 나뉘어, 총 10분 단위의 활동을 표시합니다. (1시간 = 6블록 * 10분)
+
+### 다. 일별 집계 데이터 계산 및 저장 (백엔드 - Cloud Functions)
+- **실행 주기:** 매일 오전 5시 정각 Cloud Scheduler에 의해 트리거됩니다.
+- **처리 대상:** 이전 날짜 (어제 오전 5시 ~ 오늘 오전 5시)의 데이터.
+- **데이터 소스:** Firestore `/users/{userUUID}/tenMinutesBlock`에서 이전 날짜에 해당하는 모든 10분 블록 문서 로드.
+- **계산 로직:**
+    - 로드된 모든 10분 블록 문서의 `tenMinutesDurationGrowth`, `tenMinutesDurationDailyLife`, `tenMinutesDurationEntertainment` 값을 각각 합산합니다.
+- **저장 데이터:**
+    - `dailyDurationGrowth`: 이전 날짜 하루 동안의 Growth 카테고리 총 시간(초).
+    - `dailyDurationDailyLife`: 이전 날짜 하루 동안의 Daily Life 카테고리 총 시간(초).
+    - `dailyDurationEntertainment`: 이전 날짜 하루 동안의 Entertainment 카테고리 총 시간(초).
+- **저장소 및 경로:** Firestore `/users/{userUUID}/dailylog/{YYYY-MM-DD}` (YYYY-MM-DD는 이전 날짜).
+- **데이터 리셋:** `dailylog` 저장 완료 후, 이전 날짜에 해당하는 `/users/{userUUID}/tenMinutesBlock/` 아래의 모든 문서를 삭제합니다.
+
+## 3. UI 구성 요소 (변경 없음)
 - 제목: "Digital Routine"
-- 카테고리 범례 및 총 시간: 각 카테고리명(아이콘 포함)과 해당 카테ゴリ에서 보낸 총 시간이 함께 표시됩니다.
-- 시간대별 활동 그리드: 시간 축과 10분 단위 블록으로 구성된 메인 시각화 영역입니다
+- 카테고리 범례 및 총 시간: 각 카테고리명(아이콘 포함)과 해당 카테고리에서 보낸 총 시간(일별 집계 데이터 사용)이 함께 표시됩니다.
+- 시간대별 활동 그리드: 시간 축(05-04)과 10분 단위 블록으로 구성된 메인 시각화 영역.
 
-5. 기타 조건:
-- 하루의 기준 시간은 오전 5시입니다. 이 시간을 기준으로 데이터 집계 및 화면 표시가 초기화됩니다.
-- 각 10분 구간별로 가장 많은 시간을 보낸 카테고리(major category)가 계산되어 기록됩니다.
+## 4. 기타 조건 (변경 없음)
+- 하루의 기준 시간은 오전 5시입니다.
 
-6. 활용 데이터: 
-    (1) input 데이터
-        - 데이터 소스: Firebase의 users/{user uuid}/세션
-        - 세션 id
-        - duration
-        - startTime
-        - endTime
-        - summaryCategory:'Growth', 'DailyLife', 'Entertainment' 중 하나로 분류되어 있습니다
-        - 계산 로직: 특정 10분 구간 내 방문 기록 필터링 -> 카테고리별 duration 합산 -> 최대 duration 카테고리 선택
+## 5. 개발 순서 (수정됨)
 
-    (2) output 데이터
-        - categoryTotalTimes: {
-        growth: number, // 초 단위 총 시간
-        dailyLife: number, // 초 단위 총 시간
-        entertainment: number // 초 단위 총 시간
-        }
-        - hourlyBlocks: string[] // 크기 144 (24시간 * 6블록) 배열. 각 요소는 해당 10분 블록의 major 카테고리 ('Growth', 'DailyLife', 'Entertainment', 'N/A')
-
-
-7. 데이터 저장
-- 저장소: Firestore Database, /users/{uuid}/dailylog 
-- 하루가 전환되는 시점을 기준으로(오전 5시), 카테고리별 총 소요 시간 데이터를 아래와 같이 저장합니다.
-    - dailyDurationGrowth: 
-    - dailyDurationDailyLife: 
-    - dailyDurationEntertainment:
-- 저장 경로는 /users/{uuid}/dailylog 입니다.
-- 파일명: 파일명 형식이 YYYY-MM-DD 형식이며, 일자별 파일 내에 위 데이터를 저장합니다. (예: 2025-04-01)
-- 10분 단위의 major category는 하루 단위로 임시로  chrome.storage.local에 저장하고, 하루가 전환 될 때 reset 됩니다.  
-
-
-# 개발 순서:
-1. Firebase 데이터 접근 설정:
-    - 사용자 인증(UUID 획득) 로직을 확인하고, Firestore 데이터베이스에 접근할 수 있는지 확인합니다.
-    - users/{uuid}/세션 경로에서 필요한 필드(startTime, endTime, duration, summaryCategory)를 포함한 방문 기록 데이터를 읽어오는 기본 함수를 구현합니다.
-2. 핵심 로직 구현: 10분 단위 Major Category 계산:
-    - 시간 변환 및 인덱싱: 주어진 타임스탬프(startTime, endTime)를 기준으로 해당 시간이 속하는 10분 블록의 인덱스(0~143)를 계산하는 함수를 만듭니다. (오전 5시 기준 고려)
-    - 구간 필터링: 특정 10분 블록 인덱스에 해당하는 시간 범위 내의 Firebase 방문 기록 데이터를 필터링하는 로직을 구현합니다.
-    - Major Category 결정: 필터링된 방문 기록들의 summaryCategory 별 duration을 합산하여, 해당 10분 블록의 major category ('Growth', 'DailyLife', 'Entertainment', 또는 'N/A')를 결정하는 함수(calculateMajorCategoryForBlock)를 구현합니다.
-3. 임시 데이터 처리 (chrome.storage.local):
-    - 저장: calculateMajorCategoryForBlock 함수를 사용하여 계산된 10분 단위 major category 결과를 chrome.storage.local의 hourlyBlocks 키 아래 배열(크기 144)에 저장/업데이트하는 함수를 구현합니다.
-    - 읽기: chrome.storage.local에서 hourlyBlocks 데이터를 읽어오는 함수를 구현합니다.
-    - 실시간 업데이트: 백그라운드 스크립트 등에서 새로운 방문 기록이 감지될 때마다 관련 10분 블록의 major category를 다시 계산하고 chrome.storage.local 데이터를 업데이트하는 로직을 연결합니다.
-4. 카테고리별 총 시간 계산:
-    - chrome.storage.local에 저장된 hourlyBlocks 데이터를 기반으로, 현재까지(오전 5시 기준) 각 카테고리별 총 시간(categoryTotalTimes)을 초 단위로 계산하는 함수(calculateCategoryTotalTimes)를 구현합니다. 이 함수는 UI 업데이트 시 호출됩니다.
-5. UI 컴포넌트 골격 생성 (프론트엔드):
-    - DigitalRoutine.js (또는 해당 프레임워크 컴포넌트 파일)와 DigitalRoutine.css 파일을 생성합니다.
-    - HTML 구조를 만듭니다: 제목("Digital Routine"), 카테고리 범례 영역, 시간 축 레이블(05-04), 24x6 그리드 영역.
-    - CSS를 사용하여 기본적인 레이아웃과 스타일(색상 변수 포함)을 적용합니다.
-6. UI 데이터 바인딩 및 렌더링:
-    - 총 시간 표시: UI 컴포넌트가 로드될 때 calculateCategoryTotalTimes 함수를 호출하고, 결과를 받아와 HH:MM:SS 형식으로 변환하여 카테고리 범례 옆에 표시합니다.
-    - 그리드 렌더링: chrome.storage.local에서 hourlyBlocks 데이터를 읽어와, 144개 각 그리드 셀에 해당하는 major category에 따라 CSS 클래스(또는 직접 스타일)를 적용하여 색상을 입힙니다.
-    - 실시간 UI 업데이트: chrome.storage.onChanged 이벤트 리스너를 사용하여 hourlyBlocks 데이터가 변경되면, 총 시간과 그리드 표시를 업데이트하는 로직을 구현합니다.
-7. 일별 데이터 영구 저장 (Firestore):
-    - 트리거 설정: 매일 오전 5시에 특정 작업을 수행할 로직을 구현합니다. (chrome.alarms API 사용 권장)
-    - 총 시간 계산 (일별): 리셋 시점 직전에, 이전 날짜(오전 5시 ~ 다음 날 오전 5시)의 최종 카테고리별 총 시간(dailyDurationGrowth 등)을 hourlyBlocks 데이터를 이용해 계산합니다.
-    - Firestore 저장: 계산된 일별 총 시간 데이터를 /users/{uuid}/dailylog/{YYYY-MM-DD} 형식의 Firestore 문서에 저장하는 함수를 구현하고, 오전 5시 트리거 로직 내에서 호출합니다.
-8. 임시 데이터 리셋:
-    - 오전 5시 트리거 로직 내에서 Firestore 저장 후, chrome.storage.local의 hourlyBlocks 데이터를 초기 상태(예: 모든 요소를 'N/A'로 채운 배열)로 리셋하는 코드를 추가합니다.
-9. 종합 테스트 및 디버깅:
-    - 데이터가 없을 때, 데이터가 쌓이는 과정, 브라우저 재시작 시, 오전 5시 경계 시간 등 다양한 시나리오에서 기능이 올바르게 작동하는지 테스트합니다.
-    - Firestore 데이터 저장 및 chrome.storage.local 리셋이 정확히 수행되는지 확인합니다.
+1.  **백엔드 설정 확인 및 구체화 (진행 중):**
+    - Firebase Cloud Functions 환경 확인.
+    - Cloud Scheduler 설정 계획 (매 10분, 매일 5시).
+    - Firestore 경로 및 데이터 구조 확정 (`tenMinutesBlock`, `dailylog`).
+2.  **백엔드 함수 구현 (10분 주기):**
+    - Cloud Function 생성 (스케줄 트리거).
+    - 이전 10분 세션 로드 -> 활성 세션 필터링 -> 카테고리별 duration 합산 -> `/tenMinutesBlock/{YYYY-MM-DD_HHMM}` 저장 로직 구현.
+3.  **백엔드 스케줄러 설정:**
+    - Cloud Scheduler에서 10분 주기 작업 설정 및 함수 연결.
+4.  **백엔드 함수 구현 (일별 집계 및 리셋):**
+    - Cloud Function 생성 (스케줄 트리거 - 매일 5시).
+    - 이전 날짜 `/tenMinutesBlock` 데이터 로드 -> 카테고리별 총합 계산 -> `/dailylog/{YYYY-MM-DD}` 저장 로직 구현.
+    - 이전 날짜 `/tenMinutesBlock` 데이터 삭제 로직 구현.
+5.  **백엔드 스케줄러 설정:**
+    - Cloud Scheduler에서 매일 5시 작업 설정 및 함수 연결.
+6.  **확장 프로그램 코드 정리:**
+    - `background.js` 등에서 기존 `hourlyBlocks` 계산/저장/리셋 로직 및 관련 `chrome.storage.local` 사용 부분 제거. `calculateMajorCategoryForBlock` 함수 등 불필요 로직 제거.
+7.  **프론트엔드 구현:**
+    - UI 컴포넌트 골격 생성 (`DigitalRoutine.js`, `DigitalRoutine.css`).
+    - Firestore `/tenMinutesBlock` 데이터 로드 기능 구현.
+    - 로드한 데이터로 Major Category 계산 로직 구현.
+    - 계산된 Major Category 기반 그리드 렌더링 구현.
+    - Firestore `/dailylog` 데이터 로드 기능 구현.
+    - 로드한 데이터로 총 시간 표시 (HH:MM:SS 변환).
+    - 데이터 로딩 상태, 오류 처리 등 UI 개선.
+8.  **종합 테스트 및 디버깅:**
+    - 백엔드 함수 및 스케줄러 정상 작동 확인.
+    - 프론트엔드 데이터 로드 및 표시 정확성 확인.
+    - 경계 시간(오전 5시) 처리 확인.
+    - 데이터 리셋 확인.
