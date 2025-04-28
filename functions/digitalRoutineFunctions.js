@@ -139,9 +139,13 @@ exports.processTenMinuteBlocks = onSchedule({
            tenMinutesDurationEntertainment: Math.round(categoryDurations.Entertainment),
            calculationTimestamp: admin.firestore.FieldValue.serverTimestamp(),
         };
-        await db.collection(`users/${userId}/tenMinutesBlock`).doc(docId).set(blockData, { merge: true });
+        const blockRef = db.collection(`users/${userId}/tenMinutesBlock`).doc(docId); // 문서 참조
+        console.log(`[DEBUG] Attempting to save to path: ${blockRef.path}`); // 경로 로깅 추가
+        console.log(`[DEBUG] Data to save: ${JSON.stringify(blockData)}`); // 데이터 로깅 추가
 
-        console.log(`Successfully saved block ${docId} for user ${userId}.`);
+        await blockRef.set(blockData, { merge: true }); // setDoc 대신 참조 사용 (기능 동일)
+
+        console.log(`Successfully saved block ${docId} for user ${userId}.`); // 기존 성공 로그
       });
 
       // 모든 사용자 처리 기다리기
