@@ -8,7 +8,9 @@
 ### 가. 10분 블록 데이터 계산 및 저장 (백엔드 - Cloud Functions)
 - **실행 주기:** 매 10분 정각 (예: 10:10, 10:20) Cloud Scheduler에 의해 트리거됩니다.
 - **처리 대상:** 실행 시점 직전 10분 구간 (예: 10:10 실행 시 10:00:00 ~ 10:09:59).
-- **데이터 소스:** Firestore `/users/{userUUID}/focusSessions`에서 해당 10분 구간의 세션 데이터 로드.
+- **데이터 소스:**
+    - **사용자 목록:** Firestore `/users_list` 컬렉션에서 모든 사용자 ID 로드.
+    - **세션 데이터:** 각 사용자 ID에 대해 Firestore `/users/{userUUID}/focusSessions`에서 해당 10분 구간의 세션 데이터 로드.
 - **계산 로직:**
     - 로드된 세션 중 `sessionType === 'active'`인 세션만 필터링.
     - 활성 세션의 `summaryCategory` ('Growth', 'DailyLife', 'Entertainment')별 `duration`(초) 합산.
@@ -18,7 +20,7 @@
     - `tenMinutesDurationEntertainment`: 해당 10분간 Entertainment 카테고리 총 시간(초).
 - **저장소 및 경로:** Firestore `/users/{userUUID}/tenMinutesBlock/{YYYY-MM-DD_HHMM}` (HHMM은 10분 블록 시작 시간, 예: 10:00 데이터는 _1000).
 
-### 나. 시각화 (프론트엔드)
+### 나. 시각화 (프론트엔드) 
 - **데이터 소스:** Firestore `/users/{userUUID}/tenMinutesBlock`에서 해당 날짜(오전 5시 기준)의 10분 블록 데이터(144개) 로드.
 - **Major Category 계산:** 각 10분 블록 문서에 저장된 `tenMinutesDuration...` 값들을 비교하여 가장 큰 값을 가진 카테고리를 해당 블록의 **Major Category**로 결정합니다. (이 계산은 프론트엔드에서 수행)
 - **UI 표시:**
@@ -34,7 +36,9 @@
 ### 다. 일별 집계 데이터 계산 및 저장 (백엔드 - Cloud Functions)
 - **실행 주기:** 매일 오전 5시 정각 Cloud Scheduler에 의해 트리거됩니다.
 - **처리 대상:** 이전 날짜 (어제 오전 5시 ~ 오늘 오전 5시)의 데이터.
-- **데이터 소스:** Firestore `/users/{userUUID}/tenMinutesBlock`에서 이전 날짜에 해당하는 모든 10분 블록 문서 로드.
+- **데이터 소스:**
+    - **사용자 목록:** Firestore `/users_list` 컬렉션에서 모든 사용자 ID 로드.
+    - **블록 데이터:** 각 사용자 ID에 대해 Firestore `/users/{userUUID}/tenMinutesBlock`에서 이전 날짜에 해당하는 모든 10분 블록 문서 로드.
 - **계산 로직:**
     - 로드된 모든 10분 블록 문서의 `tenMinutesDurationGrowth`, `tenMinutesDurationDailyLife`, `tenMinutesDurationEntertainment` 값을 각각 합산합니다.
 - **저장 데이터:**
