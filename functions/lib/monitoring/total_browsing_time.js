@@ -24,14 +24,12 @@ export async function calculateTotalBrowsingTime(db, userId) {
 
         let totalDurationSeconds = 0;
         dailySessions.forEach(session => {
-            // Check if the session category is one we track for browsing time
-            if (BROWSING_CATEGORIES.includes(session.summaryCategory)) {
-                // Add duration, handling cases where duration might be missing or null
-                totalDurationSeconds += (session.duration || 0);
-            }
+            // Removed category check to include all sessions
+            // Add duration, handling cases where duration might be missing or null
+            totalDurationSeconds += (session.duration || 0);
         });
 
-        console.log(`Calculated Total Browsing Time: ${totalDurationSeconds} seconds`);
+        console.log(`Calculated Total Browsing Time (All Sessions): ${totalDurationSeconds} seconds`);
         return totalDurationSeconds;
 
     } catch (error) {
