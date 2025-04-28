@@ -1,5 +1,3 @@
-import { getFirestore } from 'firebase-admin/firestore';
-
 /**
  * Calculates the start and end timestamps for the "day" interval (5 AM to 5 AM next day).
  * NOTE: This now uses the SERVER'S LOCAL TIMEZONE for the 5 AM cutoff.

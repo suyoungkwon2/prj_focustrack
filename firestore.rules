@@ -1,0 +1,24 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // 기존 규칙: 사용자는 자신의 데이터에만 접근 가능
+    match /users/{userId}/{documents=**} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+
+    // 멜 수정: users_list 컬렉션 쓰기 규칙 추가
+    match /users_list/{userId} {
+      // 인증된 사용자가 자신의 UID와 일치하는 문서 ID에 대해서만 생성/업데이트 허용
+      allow create, update: if request.auth != null && request.auth.uid == userId;
+      // 읽기 규칙은 필요에 따라 추가 (예: 함수가 읽어야 한다면 allow read: if true; 또는 더 제한적으로)
+    }
+
+    // --- 추가된 규칙 (users 컬렉션 list - 유지) ---
+    match /users/{userId} {
+      allow list: if true; // 컬렉션의 문서 ID 목록 읽기 허용 (users_list 사용으로 불필요해질 수 있음)
+    }
+
+    // (선택 사항) 다른 컬렉션에 대한 규칙...
+  }
+} 
