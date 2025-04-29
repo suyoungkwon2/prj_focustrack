@@ -9,7 +9,7 @@ const { DateTime } = require('luxon');
 const db = admin.firestore();
 
 const MINUTES_PER_BLOCK = 10;
-const DAY_START_HOUR = 5; // 일과 시작 시간 (오전 5시) - 현재 집계 함수에서 사용하지 않음
+// const DAY_START_HOUR = 5; // 일과 시작 시간 (오전 5시) - 현재 집계 함수에서 사용하지 않음 - 주석 처리 또는 삭제
 const TARGET_TIMEZONE = 'America/New_York'; // 피츠버그 시간대 (ET)
 
 /**
@@ -131,7 +131,7 @@ exports.processTenMinuteBlocks = onSchedule({
             if (session && session.sessionType === "active" &&
                 typeof session.duration === "number" && session.duration > 0 &&
                 session.summaryCategory && // 카테고리 존재 확인
-                categoryDurations.hasOwnProperty(session.summaryCategory)) { // 유효한 카테고리인지 확인
+                Object.prototype.hasOwnProperty.call(categoryDurations, session.summaryCategory)) { // 수정: no-prototype-builtins 규칙 준수
               activeSessionCount++;
               categoryDurations[session.summaryCategory] += session.duration;
             } else if (session && session.sessionType === "active") {

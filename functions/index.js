@@ -296,11 +296,11 @@ async function processFocusScoreForUser(userId) {
 // Scheduled function for Daily Metrics (수정: v2 onSchedule 사용)
 // Updated schedule to run every 30 mins starting at 5 AM
 exports.calculateDailyMetricsScheduled = onSchedule({
-  region: "us-central1", // 또는 원하는 리전
-  schedule: 'every 30 minutes from 5:00 to 4:59',
-  timeZone: 'Asia/Seoul' // Note: Scheduler runs on Seoul time, but logic calculates based on ET days
-}, async (event) => { // context -> event 로 변경
-    functions.logger.log('Starting scheduled daily metrics calculation for all users.');
+  region: "us-central1",
+  schedule: "0 5 * * *", // 매일 오전 5시 (서버 시간 기준, KST 자정 무렵)
+  timeZone: "Asia/Seoul", // KST 기준
+}, async (_event) => { // 수정: 사용되지 않는 event 변수명 변경
+    functions.logger.log("Starting scheduled daily metrics calculation for all users.");
     try {
         // 멜 수정: users 컬렉션 대신 users_list 사용
         const usersSnapshot = await db.collection('users_list').get(); 
@@ -324,7 +324,7 @@ exports.calculateDailyMetricsScheduled = onSchedule({
     return null;
   });
 
-// Helper function to process daily metrics for a single user (수정됨)
+// Helper function to process daily metrics for a single user
 async function processDailyMetricsForUser(userId) {
     functions.logger.log(`Calculating daily metrics for user ${userId}...`);
     let dateString; // Keep for logging scope
