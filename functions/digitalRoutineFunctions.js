@@ -127,16 +127,33 @@ exports.processTenMinuteBlocks = onSchedule({
 
           sessionsSnapshot.forEach((doc) => {
             const session = doc.data();
+            // --- 상세 디버그 로그 추가 --- 
+            console.log(`[DEBUG] User ${userId}, Block ${docId}, Session ${doc.id}: Checking session data... Type=${session?.sessionType}, Duration=${session?.duration}, Category='${session?.summaryCategory}'`);
+            // --- 상세 디버그 로그 끝 --- 
+
             // 세션 데이터 유효성 검사 강화
             if (session && session.sessionType === "active" &&
                 typeof session.duration === "number" && session.duration > 0 &&
                 session.summaryCategory && // 카테고리 존재 확인
                 Object.prototype.hasOwnProperty.call(categoryDurations, session.summaryCategory)) { // 수정: no-prototype-builtins 규칙 준수
+              // --- 상세 디버그 로그 추가 --- 
+              console.log(`[DEBUG] User ${userId}, Block ${docId}, Session ${doc.id}: Conditions PASSED. Adding duration ${session.duration} to category ${session.summaryCategory}.`);
+              // --- 상세 디버그 로그 끝 --- 
               activeSessionCount++;
               categoryDurations[session.summaryCategory] += session.duration;
             } else if (session && session.sessionType === "active") {
               // 유효하지 않은 카테고리 또는 duration 문제 로깅
               console.warn(`User ${userId}, Block ${docId}: Found active session with invalid data. ID: ${doc.id}, Category: ${session.summaryCategory}, Duration: ${session.duration}`);
+            } else {
+               // --- 상세 디버그 로그 추가 --- 
+               console.log(`[DEBUG] User ${userId}, Block ${docId}, Session ${doc.id}: Conditions FAILED or session not active.`);
+               // 조건 실패 사유 상세 로깅 (선택적)
+               if (!session) console.log(` -> Reason: session data is null/undefined.`);
+               else if (session.sessionType !== "active") console.log(` -> Reason: sessionType is not 'active' (${session.sessionType}).`);
+               else if (!(typeof session.duration === "number" && session.duration > 0)) console.log(` -> Reason: duration is not a positive number (${session.duration}).`);
+               else if (!session.summaryCategory) console.log(` -> Reason: summaryCategory is missing.`);
+               else if (!Object.prototype.hasOwnProperty.call(categoryDurations, session.summaryCategory)) console.log(` -> Reason: summaryCategory '${session.summaryCategory}' is not one of ${Object.keys(categoryDurations).join(', ')}.`);
+                // --- 상세 디버그 로그 끝 --- 
             }
           });
 
