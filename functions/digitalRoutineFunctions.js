@@ -12,10 +12,19 @@ const MINUTES_PER_BLOCK = 10;
 // const DAY_START_HOUR = 5; // 일과 시작 시간 (오전 5시) - 현재 집계 함수에서 사용하지 않음 - 주석 처리 또는 삭제
 const TARGET_TIMEZONE = 'America/New_York'; // 피츠버그 시간대 (ET)
 
+// 카테고리 매핑 정의 (소문자, 공백 제거 키 -> 정식 키)
+const categoryMap = {
+  growth: 'Growth',
+  dailylife: 'DailyLife',
+  entertainment: 'Entertainment'
+  // 필요 시 추가 변형 매핑 가능 (예: 'daily': 'DailyLife')
+};
+
 /**
  * Pub/Sub 스케줄러에 의해 10분마다 트리거되어
  * 직전 10분 동안의 사용자 세션 데이터를 집계하여 Firestore에 저장합니다.
  * 문서 ID는 UTC 기준, 필드에 ET 정보 추가 (luxon 사용).
+ * 카테고리 이름 정규화 (소문자, 공백제거) 후 집계.
  */
 exports.processTenMinuteBlocks = onSchedule({
   region: "us-central1",
@@ -122,28 +131,37 @@ exports.processTenMinuteBlocks = onSchedule({
            };
         } else {
           // 3. 활성 세션 필터링 및 카테고리별 duration 합산
-          const categoryDurations = { Growth: 0, DailyLife: 0, Entertainment: 0 };
+          const categoryDurations = { Growth: 0, DailyLife: 0, Entertainment: 0 }; // 집계용 객체 (정식 키 사용)
           let activeSessionCount = 0;
 
           sessionsSnapshot.forEach((doc) => {
             const session = doc.data();
-            // --- 상세 디버그 로그 추가 --- 
-            console.log(`[DEBUG] User ${userId}, Block ${docId}, Session ${doc.id}: Checking session data... Type=${session?.sessionType}, Duration=${session?.duration}, Category='${session?.summaryCategory}'`);
+            const originalCategory = session?.summaryCategory;
+            // 1. 소문자 변환, 2. 공백 제거
+            const normalizedCategory = originalCategory ? originalCategory.toLowerCase().replace(/\s+/g, '') : null;
+
+            // --- 상세 디버그 로그 추가 (normalizedCategory 포함) --- 
+            console.log(`[DEBUG] User ${userId}, Block ${docId}, Session ${doc.id}: Checking session data... Type=${session?.sessionType}, Duration=${session?.duration}, OrigCategory='${originalCategory}', NormCategory='${normalizedCategory}'`);
             // --- 상세 디버그 로그 끝 --- 
 
-            // 세션 데이터 유효성 검사 강화
+            // 세션 데이터 유효성 검사 강화 (normalizedCategory 및 categoryMap 사용)
+            let targetCategoryKey = null;
+            if (normalizedCategory && categoryMap.hasOwnProperty(normalizedCategory)) {
+                targetCategoryKey = categoryMap[normalizedCategory]; // 매핑된 정식 키 가져오기
+            }
+
             if (session && session.sessionType === "active" &&
                 typeof session.duration === "number" && session.duration > 0 &&
-                session.summaryCategory && // 카테고리 존재 확인
-                Object.prototype.hasOwnProperty.call(categoryDurations, session.summaryCategory)) { // 수정: no-prototype-builtins 규칙 준수
+                targetCategoryKey) { // targetCategoryKey가 성공적으로 매핑되었는지 확인
+
               // --- 상세 디버그 로그 추가 --- 
-              console.log(`[DEBUG] User ${userId}, Block ${docId}, Session ${doc.id}: Conditions PASSED. Adding duration ${session.duration} to category ${session.summaryCategory}.`);
+              console.log(`[DEBUG] User ${userId}, Block ${docId}, Session ${doc.id}: Conditions PASSED. Adding duration ${session.duration} to category ${targetCategoryKey} (normalized from '${normalizedCategory}').`);
               // --- 상세 디버그 로그 끝 --- 
               activeSessionCount++;
-              categoryDurations[session.summaryCategory] += session.duration;
+              categoryDurations[targetCategoryKey] += session.duration; // 정식 키 사용
             } else if (session && session.sessionType === "active") {
               // 유효하지 않은 카테고리 또는 duration 문제 로깅
-              console.warn(`User ${userId}, Block ${docId}: Found active session with invalid data. ID: ${doc.id}, Category: ${session.summaryCategory}, Duration: ${session.duration}`);
+              console.warn(`User ${userId}, Block ${docId}: Found active session with invalid data or unknown category. ID: ${doc.id}, Category: ${originalCategory}, Duration: ${session.duration}`); // 원본 카테고리 로깅
             } else {
                // --- 상세 디버그 로그 추가 --- 
                console.log(`[DEBUG] User ${userId}, Block ${docId}, Session ${doc.id}: Conditions FAILED or session not active.`);
@@ -151,15 +169,15 @@ exports.processTenMinuteBlocks = onSchedule({
                if (!session) console.log(` -> Reason: session data is null/undefined.`);
                else if (session.sessionType !== "active") console.log(` -> Reason: sessionType is not 'active' (${session.sessionType}).`);
                else if (!(typeof session.duration === "number" && session.duration > 0)) console.log(` -> Reason: duration is not a positive number (${session.duration}).`);
-               else if (!session.summaryCategory) console.log(` -> Reason: summaryCategory is missing.`);
-               else if (!Object.prototype.hasOwnProperty.call(categoryDurations, session.summaryCategory)) console.log(` -> Reason: summaryCategory '${session.summaryCategory}' is not one of ${Object.keys(categoryDurations).join(', ')}.`);
+               // else if (!normalizedCategory) console.log(` -> Reason: summaryCategory is missing or invalid ('${originalCategory}').`); // 이전 조건
+               else if (!targetCategoryKey) console.log(` -> Reason: normalized category '${normalizedCategory}' (from '${originalCategory}') could not be mapped to a known category (${Object.keys(categoryMap).join(', ')}).`); // 수정된 조건
                 // --- 상세 디버그 로그 끝 --- 
             }
           });
 
           console.log(`User ${userId}, Block ${docId}: Found ${sessionsSnapshot.size} sessions, ${activeSessionCount} active sessions processed.`);
 
-          // 4. Firestore에 저장할 데이터 구성 (소수점 제거 및 ET 정보 추가)
+          // 4. Firestore에 저장할 데이터 구성 (categoryDurations는 정식 키 사용)
           blockData = {
              tenMinutesDurationGrowth: Math.round(categoryDurations.Growth),
              tenMinutesDurationDailyLife: Math.round(categoryDurations.DailyLife),
