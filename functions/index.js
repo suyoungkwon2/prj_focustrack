@@ -164,7 +164,7 @@ exports.calculateFocusScoreScheduled = onSchedule({
   region: "us-central1", // 또는 원하는 리전
   schedule: 'every 30 minutes from 5:00 to 4:59',
   timeZone: 'Asia/Seoul'
-}, async (event) => { // context -> event 로 변경
+}, async (_event) => { // 수정: 사용되지 않는 event 변수명 변경
       functions.logger.log('Starting scheduled focus score calculation for all users.');
       try {
           // 멜 수정: users 컬렉션 대신 users_list 사용
@@ -220,7 +220,7 @@ async function processFocusScoreForUser(userId) {
         const dateString = `${year}-${month}-${day}`;
 
         // Get the timestamp for the start of the relevant 5 AM ET cycle
-        const cycleStartTimestamp = new Date(logDate); // Use the determined logDate
+        const cycleStartTimestamp = new Date(logDate);
         cycleStartTimestamp.setHours(5, 0, 0, 0); // Represents 5:00:00 AM on the logDate in ET
 
         // 3. Save/Overwrite the score (if calculated) in the daily log document
@@ -299,7 +299,7 @@ exports.calculateDailyMetricsScheduled = onSchedule({
   region: "us-central1",
   schedule: "0 5 * * *", // 매일 오전 5시 (서버 시간 기준, KST 자정 무렵)
   timeZone: "Asia/Seoul", // KST 기준
-}, async (_event) => { // 수정: 사용되지 않는 event 변수명 변경
+}, async (_event) => { // 이전 수정 유지 - 사용되지 않는 _event
     functions.logger.log("Starting scheduled daily metrics calculation for all users.");
     try {
         // 멜 수정: users 컬렉션 대신 users_list 사용

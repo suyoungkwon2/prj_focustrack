@@ -1,4 +1,3 @@
-const functions = require("firebase-functions");
 const admin = require("firebase-admin");
 // V2 스케줄러 import 추가
 const {onSchedule} = require("firebase-functions/v2/scheduler");
@@ -146,7 +145,7 @@ exports.processTenMinuteBlocks = onSchedule({
 
             // 세션 데이터 유효성 검사 강화 (normalizedCategory 및 categoryMap 사용)
             let targetCategoryKey = null;
-            if (normalizedCategory && categoryMap.hasOwnProperty(normalizedCategory)) {
+            if (normalizedCategory && Object.prototype.hasOwnProperty.call(categoryMap, normalizedCategory)) {
                 targetCategoryKey = categoryMap[normalizedCategory]; // 매핑된 정식 키 가져오기
             }
 
