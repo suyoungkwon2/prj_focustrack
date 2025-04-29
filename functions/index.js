@@ -197,65 +197,98 @@ async function processFocusScoreForUser(userId) {
         // NOTE: calculateAndLogFocusScore already handles the 2-hour window internally
         const scoreResult = await calculateAndLogFocusScore(db, userId); // db is the admin.firestore() instance
 
-        // 2. Determine the correct date string (YYYY-MM-DD) for the 5 AM cycle
+        // 2. Determine the correct date string (YYYY-MM-DD) and cycle start time based on the 5 AM ET cycle
         const now = new Date();
-        const today5AM = new Date(now);
-        today5AM.setHours(5, 0, 0, 0);
-        if (now < today5AM) { // If run before 5 AM, it belongs to the previous day's cycle
-            today5AM.setDate(today5AM.getDate() - 1);
+        // Use Intl.DateTimeFormat for reliable timezone handling - requires Node >= 13
+        // Create a Date object representing the current time in ET
+        const nowET = new Date(now.toLocaleString('en-US', { timeZone: 'America/New_York' }));
+
+        // Determine the start of the current ET day cycle (5 AM ET)
+        const today5AM_ET = new Date(nowET);
+        today5AM_ET.setHours(5, 0, 0, 0);
+
+        // Determine the date object for the log document (belongs to previous ET day if before 5 AM ET)
+        let logDate = new Date(nowET);
+        if (nowET < today5AM_ET) {
+            logDate.setDate(logDate.getDate() - 1);
         }
-        const dateString = today5AM.toISOString().split('T')[0];
+
+        // Format the date as YYYY-MM-DD for the document ID
+        const year = logDate.getFullYear(); // Use local year (ET based)
+        const month = String(logDate.getMonth() + 1).padStart(2, '0');
+        const day = String(logDate.getDate()).padStart(2, '0');
+        const dateString = `${year}-${month}-${day}`;
+
+        // Get the timestamp for the start of the relevant 5 AM ET cycle
+        const cycleStartTimestamp = new Date(logDate); // Use the determined logDate
+        cycleStartTimestamp.setHours(5, 0, 0, 0); // Represents 5:00:00 AM on the logDate in ET
 
         // 3. Save/Overwrite the score (if calculated) in the daily log document
         const logRef = db.collection(`users/${userId}/dailylog`).doc(dateString);
 
         if (scoreResult !== null) {
+            // Score calculated successfully
             const scoreData = {
                 latestFocusScore: {
-                    score: scoreResult, // The score returned from calculateAndLogFocusScore
+                    score: scoreResult,
                     message: admin.firestore.FieldValue.delete(), // Explicitly delete message
+                    error: admin.firestore.FieldValue.delete(),   // Explicitly delete error
                     calculatedAt: admin.firestore.FieldValue.serverTimestamp()
                 },
-                date: admin.firestore.Timestamp.fromDate(today5AM) // Store the date for reference
+                date: admin.firestore.Timestamp.fromDate(cycleStartTimestamp)
             };
-            await logRef.set(scoreData, { merge: true }); // Use merge: true
-            functions.logger.log(`User ${userId}: Saved focus score ${scoreResult.toFixed(4)} for date ${dateString}.`);
+            await logRef.set(scoreData, { merge: true });
+            functions.logger.log(`User ${userId}: Saved focus score ${scoreResult.toFixed(4)} for ET date ${dateString}.`);
         } else {
-            // Optionally, save a 'null' score or a status indicating no sessions
-             const noScoreData = {
+            // No sessions found for score calculation
+            const noScoreData = {
                 latestFocusScore: {
-                    score: null, // Ensure score is explicitly null
-                    message: "No sessions found in the calculation window.",
+                    score: null,
+                    message: "No sessions found in the calculation window.", // Set message
+                    error: admin.firestore.FieldValue.delete(),            // Explicitly delete error
                     calculatedAt: admin.firestore.FieldValue.serverTimestamp()
                 },
-                 date: admin.firestore.Timestamp.fromDate(today5AM)
+                date: admin.firestore.Timestamp.fromDate(cycleStartTimestamp)
             };
             await logRef.set(noScoreData, { merge: true });
-            functions.logger.log(`User ${userId}: No sessions found to calculate focus score for date ${dateString}. Saved null score.`);
+            functions.logger.log(`User ${userId}: No sessions found to calculate focus score for ET date ${dateString}. Saved null score.`);
         }
 
     } catch (error) {
         functions.logger.error(`User ${userId}: Failed to process focus score:`, error);
-        // Consider saving an error state to the logRef as well
-         try {
+        // Save error state
+        try {
+            // Recalculate dateString and cycleStartTimestamp for error logging
             const now = new Date();
-            const today5AM = new Date(now);
-            today5AM.setHours(5, 0, 0, 0);
-             if (now < today5AM) { today5AM.setDate(today5AM.getDate() - 1); }
-            const dateString = today5AM.toISOString().split('T')[0];
+            const nowET = new Date(now.toLocaleString('en-US', { timeZone: 'America/New_York' }));
+            const today5AM_ET = new Date(nowET);
+            today5AM_ET.setHours(5, 0, 0, 0);
+            let logDate = new Date(nowET);
+            if (nowET < today5AM_ET) {
+                logDate.setDate(logDate.getDate() - 1);
+            }
+            const year = logDate.getFullYear();
+            const month = String(logDate.getMonth() + 1).padStart(2, '0');
+            const day = String(logDate.getDate()).padStart(2, '0');
+            const dateString = `${year}-${month}-${day}`;
+            const cycleStartTimestamp = new Date(logDate);
+            cycleStartTimestamp.setHours(5, 0, 0, 0);
+
             const logRef = db.collection(`users/${userId}/dailylog`).doc(dateString);
             const errorData = {
                 latestFocusScore: {
                     score: null,
-                    error: error.message || "Calculation failed",
+                    message: admin.firestore.FieldValue.delete(), // Explicitly delete message
+                    error: error.message || "Calculation failed",     // Set error
                     calculatedAt: admin.firestore.FieldValue.serverTimestamp()
                 },
-                date: admin.firestore.Timestamp.fromDate(today5AM)
+                date: admin.firestore.Timestamp.fromDate(cycleStartTimestamp)
             };
-             await logRef.set(errorData, { merge: true });
-         } catch (saveError) {
-             functions.logger.error(`User ${userId}: Also failed to save error state for focus score:`, saveError);
-         }
+            await logRef.set(errorData, { merge: true });
+             functions.logger.log(`User ${userId}: Saved error state for focus score on ET date ${dateString}.`); // Added log
+        } catch (saveError) {
+            functions.logger.error(`User ${userId}: Also failed to save error state for focus score:`, saveError);
+        }
     }
 }
 
@@ -265,7 +298,7 @@ async function processFocusScoreForUser(userId) {
 exports.calculateDailyMetricsScheduled = onSchedule({
   region: "us-central1", // 또는 원하는 리전
   schedule: 'every 30 minutes from 5:00 to 4:59',
-  timeZone: 'Asia/Seoul'
+  timeZone: 'Asia/Seoul' // Note: Scheduler runs on Seoul time, but logic calculates based on ET days
 }, async (event) => { // context -> event 로 변경
     functions.logger.log('Starting scheduled daily metrics calculation for all users.');
     try {
@@ -294,7 +327,8 @@ exports.calculateDailyMetricsScheduled = onSchedule({
 // Helper function to process daily metrics for a single user (수정됨)
 async function processDailyMetricsForUser(userId) {
     functions.logger.log(`Calculating daily metrics for user ${userId}...`);
-    let dateString;
+    let dateString; // Keep for logging scope
+    let cycleStartTimestamp; // Keep for logging scope
     try {
         // 멜 수정: 각 계산 함수 호출 시 db 인스턴스를 첫 번째 인자로 전달
         const averageFocus = await calculateAverageFocus(db, userId);
@@ -303,11 +337,22 @@ async function processDailyMetricsForUser(userId) {
         // 멜 수정: 각 계산 함수 호출 시 db 인스턴스를 첫 번째 인자로 전달
         const totalBrowsingTime = await calculateTotalBrowsingTime(db, userId);
 
+        // Determine the correct date string (YYYY-MM-DD) and cycle start time based on the 5 AM ET cycle
         const now = new Date();
-        const today5AM = new Date(now);
-        today5AM.setHours(5, 0, 0, 0);
-        if (now < today5AM) { today5AM.setDate(today5AM.getDate() - 1); }
-        dateString = today5AM.toISOString().split('T')[0];
+        const nowET = new Date(now.toLocaleString('en-US', { timeZone: 'America/New_York' }));
+        const today5AM_ET = new Date(nowET);
+        today5AM_ET.setHours(5, 0, 0, 0);
+        let logDate = new Date(nowET);
+        if (nowET < today5AM_ET) {
+            logDate.setDate(logDate.getDate() - 1);
+        }
+        const year = logDate.getFullYear();
+        const month = String(logDate.getMonth() + 1).padStart(2, '0');
+        const day = String(logDate.getDate()).padStart(2, '0');
+        dateString = `${year}-${month}-${day}`;
+        cycleStartTimestamp = new Date(logDate);
+        cycleStartTimestamp.setHours(5, 0, 0, 0);
+
         const dailyMetricData = {
             dailyMetrics: {
                 averageContinuousFocusSeconds: averageFocus,
@@ -315,36 +360,46 @@ async function processDailyMetricsForUser(userId) {
                 totalBrowsingSeconds: totalBrowsingTime,
                 updatedAt: admin.firestore.FieldValue.serverTimestamp()
             },
-            date: admin.firestore.Timestamp.fromDate(today5AM)
+            date: admin.firestore.Timestamp.fromDate(cycleStartTimestamp) // Use ET cycle start timestamp
         };
         const logRef = db.collection(`users/${userId}/dailylog`).doc(dateString);
         await logRef.set(dailyMetricData, { merge: true });
-        functions.logger.log(`User ${userId}: Saved daily metrics (AvgFocus: ${averageFocus.toFixed(0)}s, MaxFocus: ${maxFocus}s, TotalBrowse: ${totalBrowsingTime}s) for date ${dateString}.`);
+        functions.logger.log(`User ${userId}: Saved daily metrics (AvgFocus: ${averageFocus.toFixed(0)}s, MaxFocus: ${maxFocus}s, TotalBrowse: ${totalBrowsingTime}s) for ET date ${dateString}.`);
     } catch (error) {
         const logDateString = dateString || 'unknown-date-error-occurred-early';
-        functions.logger.error(`User ${userId}: Failed to process daily metrics for date ${logDateString}:`, error);
-         try {
-             let errorDateString = dateString;
-             let errorDate = null;
-             if (!errorDateString) {
-                 const now = new Date();
-                 const today5AM = new Date(now);
-                 today5AM.setHours(5, 0, 0, 0);
-                 if (now < today5AM) { today5AM.setDate(today5AM.getDate() - 1); }
-                 errorDateString = today5AM.toISOString().split('T')[0];
-                 errorDate = today5AM;
-             }
-             const logRef = db.collection(`users/${userId}/dailylog`).doc(errorDateString);
-             const errorData = {
-                 dailyMetrics: { error: error.message || "Calculation failed", updatedAt: admin.firestore.FieldValue.serverTimestamp() },
-                 ...(errorDate && { date: admin.firestore.Timestamp.fromDate(errorDate) })
-             };
-             await logRef.set(errorData, { merge: true });
-             functions.logger.log(`User ${userId}: Saved error state for daily metrics on date ${errorDateString}.`);
-         } catch (saveError) {
+        functions.logger.error(`User ${userId}: Failed to process daily metrics for ET date ${logDateString}:`, error);
+        try {
+            let errorDateStr = dateString;
+            let errorCycleTimestamp = cycleStartTimestamp;
+            // Recalculate if dateString wasn't set before the error
+            if (!errorDateStr || !errorCycleTimestamp) {
+                const now = new Date();
+                const nowET = new Date(now.toLocaleString('en-US', { timeZone: 'America/New_York' }));
+                const today5AM_ET = new Date(nowET);
+                today5AM_ET.setHours(5, 0, 0, 0);
+                let logDate = new Date(nowET);
+                if (nowET < today5AM_ET) {
+                   logDate.setDate(logDate.getDate() - 1);
+                }
+                const year = logDate.getFullYear();
+                const month = String(logDate.getMonth() + 1).padStart(2, '0');
+                const day = String(logDate.getDate()).padStart(2, '0');
+                errorDateStr = `${year}-${month}-${day}`;
+                errorCycleTimestamp = new Date(logDate);
+                errorCycleTimestamp.setHours(5, 0, 0, 0);
+            }
+
+            const logRef = db.collection(`users/${userId}/dailylog`).doc(errorDateStr);
+            const errorData = {
+                dailyMetrics: { error: error.message || "Calculation failed", updatedAt: admin.firestore.FieldValue.serverTimestamp() },
+                date: admin.firestore.Timestamp.fromDate(errorCycleTimestamp) // Use ET cycle start timestamp for error doc
+            };
+            await logRef.set(errorData, { merge: true });
+            functions.logger.log(`User ${userId}: Saved error state for daily metrics on ET date ${errorDateStr}.`);
+        } catch (saveError) {
             const finalDateString = dateString || 'unknown-date-error-occurred-early';
-            functions.logger.error(`User ${userId}: Also failed to save error state for daily metrics on date ${finalDateString}:`, saveError);
-         }
+            functions.logger.error(`User ${userId}: Also failed to save error state for daily metrics on ET date ${finalDateString}:`, saveError);
+        }
     }
 }
 
