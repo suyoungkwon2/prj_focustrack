@@ -9,7 +9,8 @@
     "tabs",
     "scripting",
     "storage",
-    "notifications"
+    "notifications",
+    "topSites"
   ],
   "host_permissions": [
     "<all_urls>"

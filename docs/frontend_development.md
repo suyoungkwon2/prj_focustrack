@@ -27,10 +27,15 @@
     - `HomePage`에 통합
     - (TODO: Firebase 연동하여 실제 사용자 이름 표시)
     - (Note: `HomePage` 그리드 레이아웃에 배치 완료)
-2.  **`GSuites`** (Placeholder): G-Suites 앱 아이콘 및 링크 목록 (정적)
+2.  **`GSuites`** (Done - Basic UI): G-Suites 앱 아이콘 및 링크 목록 (정적)
     - Placeholder 컴포넌트 생성 및 `HomePage` 배치
-3.  **`FrequentlyVisitedSites`** (Placeholder): 최근 방문 사이트 목록 (Firebase 데이터 필요)
+    - 공식 Google 아이콘 SVG URL을 `<img>` 태그로 직접 로드하고 `<a>`, `Tooltip` 사용하여 8개 G-Suite 아이콘 및 링크 구현 (`frontend/src/components/home/GSuites.jsx`)
+3.  **`FrequentlyVisitedSites`** (Done - Basic UI): 최근 방문 사이트 목록 (Firebase 데이터 필요)
     - Placeholder 컴포넌트 생성 및 `HomePage` 배치
+    - `chrome.topSites.get()` API를 사용하여 상위 6개 사이트 정보 로드 (`manifest.json`에 `topSites` 권한 추가 필요)
+    - Ant Design `List`, `Avatar` 사용하여 파비콘(Google S2 Favicon 서비스), 제목, 링크 표시 (`frontend/src/components/home/FrequentlyVisitedSites.jsx`)
+    - (Note: CSP 문제로 `chrome://favicon/` 대신 Google S2 Favicon 서비스 사용)
+    - (TODO: Firebase 데이터 활용 옵션 고려)
 4.  **`Monitoring`** (Placeholder): 각종 지표 (Total Browsing Time, Max/Average Focus, Focus Score) 표시 (Firebase 데이터 및 계산 로직 필요)
     - Placeholder 컴포넌트 생성 및 `HomePage` 배치
 5.  **`DigitalRoutine`** (Placeholder): 시간대별 카테고리 시각화 (Firebase 데이터 필요, 시각화 로직 복잡)
