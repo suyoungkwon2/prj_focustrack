@@ -25,9 +25,8 @@
       "run_at": "document_idle"
     }
   ],
-  "action": {
-    "default_title": "FocusTrack",
-    "default_popup": "viewer.html"
+  "chrome_url_overrides": {
+    "newtab": "dist/index.html"
   },
   "content_security_policy": {
     "extension_pages": "script-src 'self'; object-src 'self'"
