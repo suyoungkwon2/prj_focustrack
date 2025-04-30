@@ -35,6 +35,8 @@ exports.processTenMinuteBlocks = onSchedule({
     console.log("Starting processTenMinuteBlocks function execution (v2, using luxon)."); // 로그 수정
 
     const now = new Date(event.scheduleTime || Date.now()); // event.scheduleTime 사용 권장
+    const nowET = DateTime.fromJSDate(now).setZone(TARGET_TIMEZONE); // 현재 시점 ET
+
     // 처리할 10분 블록의 *시작* 시간 계산 (UTC 기준)
     const executionTimeMinutes = now.getMinutes();
     const minutesToSubtract = executionTimeMinutes % MINUTES_PER_BLOCK;
@@ -55,6 +57,17 @@ exports.processTenMinuteBlocks = onSchedule({
     const blockStartTimeET = DateTime.fromJSDate(blockStartTimeUTC).setZone(TARGET_TIMEZONE);
     const etDateString = blockStartTimeET.toFormat('yyyy-MM-dd');
     const etTimeString = blockStartTimeET.toFormat('HH:mm');
+
+    // '오늘' 날짜 계산 (ET, 오전 5시 기준)
+    let todayDateET;
+    if (nowET.hour >= 5) {
+        // 오전 5시 이후면 오늘 날짜
+        todayDateET = nowET.toFormat('yyyy-MM-dd');
+    } else {
+        // 오전 5시 이전이면 어제 날짜가 '오늘' 기준
+        todayDateET = nowET.minus({ days: 1 }).toFormat('yyyy-MM-dd');
+    }
+    console.log(`Determined 'today' (ET, 5AM based) as: ${todayDateET}`);
 
 
     console.log(`Processing block UTC: ${docId} (${blockStartTimeUTC.toISOString()} to ${blockEndTimeUTC.toISOString()}), ET: ${etDateString} ${etTimeString}`);
@@ -198,7 +211,45 @@ exports.processTenMinuteBlocks = onSchedule({
 
         await blockRef.set(blockData, { merge: true }); // set 사용 (merge는 혹시 모를 충돌 방지)
 
-        console.log(`Successfully saved block ${docId} (ET: ${etDateString} ${etTimeString}) for user ${userId}.`); // 성공 로그 수정
+        // --- 추가: 실시간 Dailylog 업데이트 ---
+        const dailyLogRef = db.collection(`users/${userId}/dailylog`).doc(todayDateET); // 오늘 날짜의 dailylog 문서 참조
+        const growthInc = blockData.tenMinutesDurationGrowth || 0;
+        const dailyLifeInc = blockData.tenMinutesDurationDailyLife || 0;
+        const entertainmentInc = blockData.tenMinutesDurationEntertainment || 0;
+
+        // digitalRoutine 필드 업데이트 (FieldValue.increment 사용)
+        if (blockData.sessionCount > 0) {
+            try {
+                await dailyLogRef.set({
+                    digitalRoutine: {
+                        dailyDurationGrowth: admin.firestore.FieldValue.increment(growthInc),
+                        dailyDurationDailyLife: admin.firestore.FieldValue.increment(dailyLifeInc),
+                        dailyDurationEntertainment: admin.firestore.FieldValue.increment(entertainmentInc),
+                        updatedAt: admin.firestore.FieldValue.serverTimestamp(), // 서버 타임스탬프 사용
+                    }
+                }, { merge: true }); // merge: true 로 digitalRoutine 필드만 덮어쓰거나 생성
+
+                console.log(`User ${userId}: Updated daily log ${todayDateET} with increments (G:${growthInc}, D:${dailyLifeInc}, E:${entertainmentInc})`);
+
+            } catch (dailyLogError) {
+                console.error(`User ${userId}: Failed to update daily log ${todayDateET}:`, dailyLogError);
+            }
+        } else {
+             // 누적할 데이터가 없어도 updatedAt 갱신
+             try {
+                 await dailyLogRef.set({
+                     digitalRoutine: {
+                         updatedAt: admin.firestore.FieldValue.serverTimestamp()
+                     }
+                 }, { merge: true });
+                 console.log(`User ${userId}: Touched daily log ${todayDateET} updatedAt (no increments).`);
+             } catch (dailyLogError) {
+                 console.error(`User ${userId}: Failed to touch daily log ${todayDateET}:`, dailyLogError);
+             }
+        }
+        // --- Dailylog 업데이트 끝 ---
+
+        console.log(`Successfully saved block ${docId} (ET: ${etDateString} ${etTimeString}) and updated daily log for user ${userId}.`); // 성공 로그 수정
       });
 
       // 모든 사용자 처리 기다리기
@@ -220,76 +271,61 @@ exports.processTenMinuteBlocks = onSchedule({
 // 주석 제거 및 변수 사용 안함 (직접 시간 지정)
 
 /**
- * 매일 특정 시간(ET 기준 오전 5시)에 실행되어 '어제'(ET 기준)의 10분 블록 데이터를 집계하고,
- * 집계된 데이터를 dailylog에 저장한 후, 사용된 10분 블록 데이터를 삭제합니다.
- * tenMinutesBlock 문서의 'blockDateET' 필드를 사용하여 집계 대상을 찾습니다 (luxon 사용).
+ * 매일 특정 시간(ET 기준 오전 5시)에 실행되어 '이틀 전'(ET 기준)의 10분 블록 데이터를 삭제합니다.
+ * tenMinutesBlock 문서의 'blockDateET' 필드를 사용하여 삭제 대상을 찾습니다 (luxon 사용).
  */
 exports.aggregateDailyDurations = onSchedule({
   region: "us-central1",
   schedule: "0 5 * * *", // 매일 오전 5시
-  timeZone: TARGET_TIMEZONE, // 미국 동부 시간대 (피츠버그) - 집계 기준 시간대
+  timeZone: TARGET_TIMEZONE, // 미국 동부 시간대 (피츠버그) - 삭제 기준 시간대
   // memory: "512MB", // 필요 시 메모리 설정
   // timeoutSeconds: 540, // 필요 시 타임아웃 설정 (최대 540초)
 }, async (event) => {
-  console.log(`Starting aggregateDailyDurations function execution (v2 - ET ${TARGET_TIMEZONE} 5 AM, using luxon).`); // 로그 수정
+  console.log(`Starting tenMinutesBlock cleanup function (v2 - ET ${TARGET_TIMEZONE} 5 AM, using luxon).`); // 로그 수정: 집계 -> 정리
 
-  // 처리할 날짜 ('어제', ET 기준) (luxon 사용)
+  // 처리할 날짜 ('이틀 전', ET 기준) (luxon 사용)
   const executionTime = new Date(event.scheduleTime || Date.now()); // 스케줄러의 시간 사용 (ET 5시에 가까운 시간)
   const executionTimeET = DateTime.fromJSDate(executionTime).setZone(TARGET_TIMEZONE); // 실행 시간을 ET로 명시적 변환
 
-  const targetDateET = executionTimeET.minus({ days: 1 }); // 어제 날짜 계산
-  const targetDateStringET = targetDateET.toFormat('yyyy-MM-dd'); // 어제 날짜 문자열 (YYYY-MM-DD)
+  const targetDateET = executionTimeET.minus({ days: 2 }); // 이틀 전 날짜 계산
+  const targetDateStringET = targetDateET.toFormat('yyyy-MM-dd'); // 이틀 전 날짜 문자열 (YYYY-MM-DD)
 
-  console.log(`Aggregating data for ET date: ${targetDateStringET}`);
+  console.log(`Deleting tenMinutesBlock data for ET date: ${targetDateStringET}`); // 로그 수정: 집계 -> 삭제
 
 
   try {
     // 1. 모든 사용자 ID 가져오기 (수정: users_list 컬렉션 사용)
     const usersSnapshot = await db.collection("users_list").get();
     const userIds = usersSnapshot.docs.map((doc) => doc.id);
-    console.log(`Found ${userIds.length} users from users_list to process for daily aggregation.`);
+    console.log(`Found ${userIds.length} users from users_list to process for daily cleanup.`); // 로그 수정
 
     const allPromises = userIds.map(async (userId) => {
-      console.log(`Processing daily aggregation for user: ${userId}, ET Date: ${targetDateStringET}`);
+      console.log(`Processing tenMinutesBlock cleanup for user: ${userId}, ET Date: ${targetDateStringET}`); // 로그 수정
       const tenMinutesBlockRef = db.collection(`users/${userId}/tenMinutesBlock`);
-      const dailyLogRef = db.collection(`users/${userId}/dailylog`).doc(targetDateStringET); // dailylog 문서 ID는 ET 날짜 사용
+      // const dailyLogRef = db.collection(`users/${userId}/dailylog`).doc(targetDateStringET); // dailylog 참조 제거
 
-      let dailyDurations = { Growth: 0, DailyLife: 0, Entertainment: 0 };
+      // let dailyDurations = { Growth: 0, DailyLife: 0, Entertainment: 0 }; // 집계 변수 제거
       let blocksToDelete = [];
-      let totalBlocksProcessed = 0;
+      let totalBlocksFound = 0; // 변수명 변경
 
-      // 2. '어제'(ET 기준) 날짜의 10분 블록 데이터 가져오기 (blockDateET 필드 사용)
+      // 2. '이틀 전'(ET 기준) 날짜의 10분 블록 데이터 가져오기 (blockDateET 필드 사용)
       console.log(`User ${userId}: Querying tenMinutesBlock where blockDateET == ${targetDateStringET}`);
       const querySnapshot = await tenMinutesBlockRef
            .where('blockDateET', '==', targetDateStringET) // ET 날짜 문자열로 정확히 쿼리
            .get();
 
       querySnapshot.forEach((doc) => {
-          const data = doc.data();
-          // 이미 날짜로 필터링 되었으므로 추가 시간 검증 불필요
-          dailyDurations.Growth += data.tenMinutesDurationGrowth || 0;
-          dailyDurations.DailyLife += data.tenMinutesDurationDailyLife || 0;
-          dailyDurations.Entertainment += data.tenMinutesDurationEntertainment || 0;
+          // 집계 로직 제거
           blocksToDelete.push(doc.id); // 삭제할 문서 ID 저장 (UTC 기준 ID)
-          totalBlocksProcessed++;
+          totalBlocksFound++; // 카운터 이름 변경
       });
 
-      console.log(`User ${userId}: Found ${totalBlocksProcessed} tenMinutesBlock documents for ET date ${targetDateStringET}.`);
+      console.log(`User ${userId}: Found ${totalBlocksFound} tenMinutesBlock documents for ET date ${targetDateStringET}.`); // 로그 수정
 
-      // 3. 집계 결과 dailylog에 저장 (처리된 블록이 있을 경우)
-      if (totalBlocksProcessed > 0) {
-        const dailyLogData = {
-          dailyDurationGrowth: Math.round(dailyDurations.Growth),
-          dailyDurationDailyLife: Math.round(dailyDurations.DailyLife),
-          dailyDurationEntertainment: Math.round(dailyDurations.Entertainment),
-          aggregationTimestamp: admin.firestore.FieldValue.serverTimestamp(), // 집계 실행 시간 (UTC)
-          aggregatedDateET: targetDateStringET, // 어떤 날짜를 집계했는지 명시
-          aggregatedBlocksCount: totalBlocksProcessed, // 몇 개의 블록을 집계했는지 명시
-        };
-        await dailyLogRef.set(dailyLogData); // dailylog 문서는 ET 날짜 ID로 저장
-        console.log(`User ${userId}: Saved daily log for ET date ${targetDateStringET}. Growth: ${dailyLogData.dailyDurationGrowth}s, DailyLife: ${dailyLogData.dailyDurationDailyLife}s, Entertainment: ${dailyLogData.dailyDurationEntertainment}s`);
+      // 3. 집계 결과 dailylog 저장 로직 제거
 
-        // 4. 처리된 10분 블록 데이터 삭제 (Batch 사용)
+      // 4. 처리된(찾은) 10분 블록 데이터 삭제 (Batch 사용)
+      if (totalBlocksFound > 0) { // 카운터 이름 변경
         const batchSize = 500; // Firestore batch write 한계
         console.log(`User ${userId}: Starting deletion of ${blocksToDelete.length} blocks for ET date ${targetDateStringET}.`);
         for (let i = 0; i < blocksToDelete.length; i += batchSize) {
@@ -304,17 +340,17 @@ exports.aggregateDailyDurations = onSchedule({
         }
          console.log(`User ${userId}: Successfully deleted ${blocksToDelete.length} tenMinutesBlock documents for ET date ${targetDateStringET}.`);
       } else {
-         console.log(`User ${userId}: No tenMinutesBlock data found for ET date ${targetDateStringET}. Skipping aggregation and deletion.`);
+         console.log(`User ${userId}: No tenMinutesBlock data found for ET date ${targetDateStringET}. Skipping deletion.`); // 로그 수정
       }
     });
 
     // 모든 사용자 처리 완료 기다리기
     await Promise.all(allPromises);
-    console.log(`aggregateDailyDurations function finished successfully for ET date ${targetDateStringET}.`);
+    console.log(`tenMinutesBlock cleanup function finished successfully for ET date ${targetDateStringET}.`); // 로그 수정
     return null;
 
   } catch (error) {
-    console.error(`Error in aggregateDailyDurations for ET date ${targetDateStringET}:`, error);
+    console.error(`Error in tenMinutesBlock cleanup for ET date ${targetDateStringET}:`, error); // 로그 수정
     // luxon 사용 시 추가적인 오류 로깅
      if (error.message && error.message.includes('luxon')) {
          console.error("Potential Luxon related error details:", error);
