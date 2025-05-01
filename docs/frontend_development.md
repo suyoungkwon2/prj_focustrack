@@ -30,16 +30,24 @@
 2.  **`GSuites`** (Done - Basic UI): G-Suites 앱 아이콘 및 링크 목록 (정적)
     - Placeholder 컴포넌트 생성 및 `HomePage` 배치
     - 공식 Google 아이콘 SVG URL을 `<img>` 태그로 직접 로드하고 `<a>`, `Tooltip` 사용하여 8개 G-Suite 아이콘 및 링크 구현 (`frontend/src/components/home/GSuites.jsx`)
-3.  **`FrequentlyVisitedSites`** (Done - Basic UI): 최근 방문 사이트 목록 (Firebase 데이터 필요)
+3.  **`FrequentlyVisitedSites`** (Done - Basic UI): 최근 방문 사이트 목록
     - Placeholder 컴포넌트 생성 및 `HomePage` 배치
-    - `chrome.topSites.get()` API를 사용하여 상위 6개 사이트 정보 로드 (`manifest.json`에 `topSites` 권한 추가 필요)
-    - Ant Design `List`, `Avatar` 사용하여 파비콘(Google S2 Favicon 서비스), 제목, 링크 표시 (`frontend/src/components/home/FrequentlyVisitedSites.jsx`)
+    - `chrome.topSites.get()` API를 사용하여 상위 6개 사이트 정보 로드 (`manifest.json`에 `topSites` 권한 추가)
+    - Ant Design `List`, `Avatar` 사용하여 파비콘(Google S2 Favicon 서비스), 제목, 링크 표시
     - (Note: CSP 문제로 `chrome://favicon/` 대신 Google S2 Favicon 서비스 사용)
     - (TODO: Firebase 데이터 활용 옵션 고려)
 4.  **`Monitoring`** (Placeholder): 각종 지표 (Total Browsing Time, Max/Average Focus, Focus Score) 표시 (Firebase 데이터 및 계산 로직 필요)
     - Placeholder 컴포넌트 생성 및 `HomePage` 배치
-5.  **`DigitalRoutine`** (Placeholder): 시간대별 카테고리 시각화 (Firebase 데이터 필요, 시각화 로직 복잡)
+5.  **`DigitalRoutine`** (Done): 시간대별 카테고리 시각화 (Firebase 데이터 필요, 시각화 로직 복잡)
     - Placeholder 컴포넌트 생성 및 `HomePage` 배치
+    - (TODO: Firebase SDK 설치 및 설정) (Done)
+    - (TODO: Firestore 데이터 리스너 설정 - `/tenMinutesBlock`, `/dailylog`) (Done - Auth 연동)
+    - (TODO: Major Category 계산 및 그리드 색상 로직 구현) (Done)
+    - (TODO: 총 시간 표시 로직 구현) (Done)
+    - (TODO: 시간 축 및 그리드 UI 구현) (Done)
+    - (Note: Firestore 연결 오류 발생 가능성 - 보안 규칙 확인 필요) (Resolved by Auth)
+    - (Note: 아이콘, 색상, 총 시간 레이아웃 UI 수정 완료)
+    - (Note: AuthContext 생성 및 적용, DigitalRoutine에서 currentUser.uid 사용하도록 수정)
 6.  **`TodaysPicks`** (Placeholder): AI 요약 주제, 시간, 관련 페이지 목록 (Gemini API 및 Firebase 데이터 필요)
     - Placeholder 컴포넌트 생성 및 `HomePage` 배치
 7.  **`SmartAlerts`** (Placeholder): 특정 조건 충족 시 알림 표시 (백그라운드 로직 또는 프론트엔드 상태 기반)
