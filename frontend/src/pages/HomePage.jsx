@@ -14,7 +14,7 @@ const { Text } = Typography;
 function HomePage() {
   const leftColSpan = 6;
   const middleColSpan = 10;
-  const rightColSpan = 8;
+  const rightColSpan = 7;
 
   const { currentUser, loadingAuth } = useAuth();
 
