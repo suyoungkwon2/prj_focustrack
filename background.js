@@ -425,7 +425,7 @@ async function extractContentAndSummarize(tabId, url, title) {
       
       // Gemini API 호출 (타임아웃 추가)
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 15000); // 15초 타임아웃
+      const timeoutId = setTimeout(() => controller.abort(), 10000); // 15초 타임아웃
       
       try {
         console.log("[GEMINI] Calling API for summary...");
