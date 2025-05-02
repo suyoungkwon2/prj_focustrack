@@ -78,8 +78,9 @@ function FrequentlyVisitedSites() {
             // 각 아이템을 div로 감싸고 스타일 적용 (Col 제거)
             <div key={site.url} style={{ display: 'flex', alignItems: 'center', marginBottom: '16px' }}> {/* marginBottom으로 아이템 간 수직 간격 추가 */}
               <Avatar
-                src={`https://www.google.com/s2/favicons?sz=32&domain_url=${encodeURIComponent(site.url)}`}
-                style={{ marginRight: '12px' }} // 아이콘과 텍스트 간격
+                src={`https://www.google.com/s2/favicons?sz=64&domain_url=${encodeURIComponent(site.url)}`}
+                style={{ marginRight: '12px' }}
+                alt={`${originalTitle} Favicon`}
               />
               {/* Tooltip으로 전체 제목 표시 */}
               <Tooltip title={originalTitle}>

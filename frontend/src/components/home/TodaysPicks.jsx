@@ -11,7 +11,7 @@ const getFaviconUrl = (url) => {
   try {
     // 유효한 URL인지 확인 후 파비콘 URL 생성
     new URL(url);
-    return `https://www.google.com/s2/favicons?sz=32&domain_url=${encodeURIComponent(url)}`;
+    return `https://www.google.com/s2/favicons?sz=64&domain_url=${encodeURIComponent(url)}`;
   } catch (e) {
     // 유효하지 않은 URL 처리 (기본 아이콘 또는 null 반환)
     console.error("Invalid URL for favicon:", url);
@@ -118,9 +118,12 @@ function TodaysPicks({ userId, classifiedTopic, classifiedSummary = [], sessionI
         key={session.id || session.url}
         style={{ display: 'flex', alignItems: 'center', marginBottom: '8px' }}
       >
-        {faviconUrl && (
-          <Avatar src={faviconUrl} size="small" style={{ marginRight: '8px' }} />
-        )}
+        {faviconUrl && <Avatar
+                         src={faviconUrl}
+                         size="small" // 작은 크기 유지
+                         style={{ marginRight: '8px' }}
+                         alt={`${displayUrl} Favicon`}
+                       />}
         <Tooltip title={session.url}>
           <Link
             href={session.url}
