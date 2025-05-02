@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Card, Avatar, Typography, Empty, Row, Col, Tooltip } from 'antd';
+import { Card, Avatar, Typography, Empty, Tooltip } from 'antd';
 
 const { Text, Link } = Typography;
 
@@ -55,9 +55,9 @@ function FrequentlyVisitedSites() {
       return <Empty description="No frequently visited sites found." image={Empty.PRESENTED_IMAGE_SIMPLE} />;
     }
 
-    // Row와 Col을 사용한 2열 레이아웃
+    // Row와 Col을 사용한 2열 레이아웃 제거하고 1열로 변경
     return (
-      <Row gutter={[16, 16]}> {/* gutter로 아이템 간 간격 조정 */}
+      <div> {/* Row 제거, 단순 div로 감싸기 */}
         {topSites.map((site) => {
           let originalTitle = site.title;
           let hostname = '';
@@ -72,28 +72,26 @@ function FrequentlyVisitedSites() {
             originalTitle = site.url || 'Invalid URL'; // URL이라도 표시
           }
 
-          const displayTitle = truncateTitle(originalTitle, 10); // 10자로 줄이기
+          const displayTitle = truncateTitle(originalTitle, 18); // 10자로 줄이기
 
           return (
-            // 각 아이템을 Col로 감싸고 span={12}로 설정하여 2열 만듦
-            <Col span={12} key={site.url}>
-              <div style={{ display: 'flex', alignItems: 'center' }}>
-                <Avatar
-                  src={`https://www.google.com/s2/favicons?sz=32&domain_url=${encodeURIComponent(site.url)}`}
-                  style={{ marginRight: '12px' }} // 아이콘과 텍스트 간격
-                />
-                {/* Tooltip으로 전체 제목 표시 */}
-                <Tooltip title={originalTitle}>
-                  {/* target="_self" 유지 */}
-                  <Link href={site.url} target="_self" style={{ color: 'inherit' }}>
-                    {displayTitle}
-                  </Link>
-                </Tooltip>
-              </div>
-            </Col>
+            // 각 아이템을 div로 감싸고 스타일 적용 (Col 제거)
+            <div key={site.url} style={{ display: 'flex', alignItems: 'center', marginBottom: '16px' }}> {/* marginBottom으로 아이템 간 수직 간격 추가 */}
+              <Avatar
+                src={`https://www.google.com/s2/favicons?sz=32&domain_url=${encodeURIComponent(site.url)}`}
+                style={{ marginRight: '12px' }} // 아이콘과 텍스트 간격
+              />
+              {/* Tooltip으로 전체 제목 표시 */}
+              <Tooltip title={originalTitle}>
+                {/* target="_self" 유지 */}
+                <Link href={site.url} target="_self" style={{ color: 'inherit' }}>
+                  {displayTitle}
+                </Link>
+              </Tooltip>
+            </div>
           );
         })}
-      </Row>
+      </div>
     );
   };
 
