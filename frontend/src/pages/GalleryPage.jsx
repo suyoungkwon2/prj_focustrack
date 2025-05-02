@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Select, Row, Col, Card, Image, Typography, Spin, Empty, Space } from 'antd';
+import { Select, Row, Col, Card, Image, Typography, Spin, Empty, Space, Tag } from 'antd';
 import { collection, query, where, orderBy, getDocs, Timestamp } from 'firebase/firestore';
 import { db } from '../firebase/config'; // Firebase 설정 확인
 import { useAuth } from '../contexts/AuthContext';
@@ -7,19 +7,29 @@ import dayjs from 'dayjs'; // dayjs 추가
 
 const { Text } = Typography;
 
+// 색상 정의 업데이트
+const colors = {
+  Growth: '#99DAFF',
+  DailyLife: '#FFDDAD',
+  Entertainment: '#FFD6E8',
+  Image: '#AFA6EA',   // 색상 변경
+  Youtube: '#FF8C8C', // 색상 변경
+  default: '#E8E8E8'
+};
+
 // 카테고리 옵션 수정 (All 추가)
 const categoryOptions = [
-  { value: 'All Categories', label: 'All Categories' }, // 기본값
+  { value: 'All Categories', label: 'All Categories' },
   { value: 'Growth', label: 'Growth' },
   { value: 'DailyLife', label: 'Daily Life' },
-  { value: 'Entertainment', label: 'Entertainment' },
+  { value: 'Entertainment', label: 'Entertain' },
 ];
 
 // 미디어 타입 옵션 수정
 const mediaOptions = [
   { value: 'All Media', label: 'All Media' },
   { value: 'Image', label: 'Image' },
-  { value: 'Youtube', label: 'Youtube' }, // Youtube 옵션 추가
+  { value: 'Youtube', label: 'Youtube' },
 ];
 
 // --- Helper Function: 유튜브 썸네일 URL 생성 ---
@@ -28,23 +38,67 @@ const getYoutubeThumbnailUrl = (youtubeUrl) => {
     const url = new URL(youtubeUrl);
     const videoId = url.searchParams.get('v');
     if (videoId) {
-      // mqdefault (320x180), hqdefault (480x360), sddefault (640x480), maxresdefault (1920x1080)
       return `https://img.youtube.com/vi/${videoId}/mqdefault.jpg`;
     }
   } catch (e) {
     console.error("Error parsing YouTube URL:", youtubeUrl, e);
   }
-  return null; // 실패 시 null 반환
+  return null;
 };
 // ---------------------------------------------
+
+// --- 칩 렌더링 함수 ---
+const renderChip = (type, value) => {
+  let color = colors.default;
+  if (type === 'category' && colors[value]) {
+    color = colors[value];
+  } else if (type === 'media' && colors[value]) {
+    color = colors[value];
+  }
+  return (
+    <Tag bordered={false} color={color} style={{ borderRadius: '10px', margin: '0 0 0 4px', color: '#000000' }}>
+      {value}
+    </Tag>
+  );
+};
+// -----------------------
+
+// --- Select 필터 칩 렌더러 ---
+const tagRender = (props) => {
+  const { label, value, closable, onClose } = props;
+  let color = colors.default;
+  // 값으로 색상 찾기 (옵션 목록 전체를 확인하는 대신 직접 매핑)
+  if (colors[value]) {
+      color = colors[value];
+  } else if (value === 'All Categories' || value === 'All Media') {
+      // 기본값에 대한 스타일 (선택 사항)
+  }
+
+  const onPreventMouseDown = (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+  };
+  return (
+    <Tag
+      color={color}
+      onMouseDown={onPreventMouseDown}
+      closable={closable}
+      onClose={onClose}
+      style={{ marginRight: 3, borderRadius: '10px' }}
+    >
+      {label}
+    </Tag>
+  );
+};
+// ---------------------------
 
 function GalleryPage() {
   const { currentUser } = useAuth();
   const [galleryData, setGalleryData] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [categoryFilter, setCategoryFilter] = useState('All Categories'); // 기본값 변경
-  const [mediaFilter, setMediaFilter] = useState('All Media'); // 미디어 필터 상태 추가
+  const [categoryFilter, setCategoryFilter] = useState('All Categories');
+  const [mediaFilter, setMediaFilter] = useState('All Media');
 
   useEffect(() => {
     // --- 로그 추가: useEffect 시작 및 사용자 확인 ---
@@ -166,62 +220,87 @@ function GalleryPage() {
 
   return (
     <div>
-      <h1>Gallery</h1>
-      <Space wrap style={{ marginBottom: '24px' }}>
-         {/* 필터 영역 */}
-        <Text>Filter</Text>
-        <Text>Category:</Text>
-        <Select
-          value={categoryFilter}
-          placeholder="Category" // Placeholder 추가
-          style={{ width: 150 }} // 너비 조정
-          onChange={setCategoryFilter}
-          options={categoryOptions}
-        />
-        <Text>Media:</Text>
-        <Select
-          value={mediaFilter}
-          placeholder="Media" // Placeholder 추가
-          style={{ width: 120 }}
-          onChange={setMediaFilter}
-          options={mediaOptions}
-        />
-      </Space>
+      {/* 필터와 그리드를 감싸는 중앙 정렬 div */}
+      <div style={{ maxWidth: '1200px', margin: '0 auto' }}>
+        {/* 필터 영역을 이 안으로 이동 */}
+        <Space wrap style={{ marginBottom: '24px' }}>
+          <Text>Category:</Text>
+          <Select
+            value={categoryFilter}
+            placeholder="Category"
+            style={{ width: 150 }}
+            onChange={setCategoryFilter}
+            options={categoryOptions}
+            // tagRender={tagRender} // 스킵
+          />
+          <Text>Media:</Text>
+          <Select
+            value={mediaFilter}
+            placeholder="Media"
+            style={{ width: 120 }}
+            onChange={setMediaFilter}
+            options={mediaOptions}
+            // tagRender={tagRender} // 스킵
+          />
+        </Space>
 
-      {/* 이미지 그리드 영역 */}
-      {loading && <Spin tip="Loading gallery..." size="large" style={{ display: 'block', marginTop: '50px' }} />}
-      {!loading && error && <Text type="danger">Error: {error}</Text>}
-      {!loading && !error && galleryData.length === 0 && <Empty description="No media found for the selected criteria." />}
+        {/* 그리드 영역 */}
+        {loading && <Spin tip="Loading gallery..." size="large" style={{ display: 'block', marginTop: '50px' }} />}
+        {!loading && error && <Text type="danger">Error: {error}</Text>}
+        {!loading && !error && galleryData.length === 0 && <Empty description="No media found for the selected criteria." />}
 
-      {!loading && !error && galleryData.length > 0 && (
-        <Row gutter={[16, 16]}> 
-          {galleryData.map((item) => (
-            <Col key={item.id} xs={12} sm={8} md={6} lg={6}>
-              <Card
-                hoverable
-                cover={
-                  <a href={item.originalUrl} target="_blank" rel="noopener noreferrer">
-                     {/* 이미지 렌더링 (추후 타입별 렌더링 분기) */}
-                     <Image
-                       alt={`Gallery ${item.type}`}
-                       src={item.mediaUrl}
-                       style={{ height: 150, objectFit: 'cover', width: '100%' }}
-                       preview={false}
-                       // 유튜브 썸네일 로딩 실패 시 대체 이미지 (선택 사항)
-                       fallback="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkqAcAAIUAgUW0RjgAAAAASUVORK5CYII="
-                     />
-                  </a>
-                }
-                bodyStyle={{ padding: '12px' }}
-              >
-                <Card.Meta
-                  description={item.date}
-                />
-              </Card>
-            </Col>
-          ))}
-        </Row>
-      )}
+        {!loading && !error && galleryData.length > 0 && (
+          <Row gutter={[16, 16]}>
+            {galleryData.map((item) => {
+              const imageContainerHeight = 150;
+              const imageContainerWidth = Math.round(imageContainerHeight * 16 / 9);
+              const imageContainerStyle = {
+                height: `${imageContainerHeight}px`,
+                // width: '100%', // Col 너비에 맞춤 -> 고정 너비로 변경
+                width: `${imageContainerWidth}px`, // 너비 고정
+                // maxWidth: `${imageContainerWidth}px`, // 너비 고정 시 필요 없음
+                margin: '0 auto', // 컨테이너 내부 중앙 정렬
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                overflow: 'hidden',
+                backgroundColor: '#f0f0f0',
+                // border: '1px solid rgba(0, 0, 0, 0.06)', // 테두리 제거
+              };
+
+              return (
+                <Col key={item.id} xs={12} sm={8} md={6} lg={6}>
+                  <Card
+                    hoverable
+                    // style={{ borderRadius: '2px' }} // 카드 모서리 둥글게
+                    style={{ borderRadius: '2px', border: '1px solid rgba(0, 0, 0, 0.06)' }} // 테두리 여기에 추가
+                    bodyStyle={{ padding: 0 }}
+                  >
+                    <a href={item.originalUrl} target="_blank" rel="noopener noreferrer" style={{ display: 'block' }}>
+                       <div style={imageContainerStyle}>
+                         <Image
+                           alt={`Gallery ${item.type}`}
+                           src={item.mediaUrl}
+                           style={{ maxHeight: '100%', maxWidth: '100%', objectFit: 'contain' }}
+                           preview={false}
+                           fallback="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkqAcAAIUAgUW0RjgAAAAASUVORK5CYII="
+                         />
+                       </div>
+                    </a>
+                    <div style={{ padding: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                       <Text type="secondary">{item.date}</Text>
+                       <Space size={4}>
+                         {item.category !== 'N/A' && renderChip('category', item.category)}
+                         {renderChip('media', item.type)}
+                       </Space>
+                     </div>
+                  </Card>
+                </Col>
+              );
+            })}
+          </Row>
+        )}
+      </div>
     </div>
   );
 }
