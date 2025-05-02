@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Typography } from 'antd';
+import { Typography, Card, Divider } from 'antd';
 import { DateTime } from 'luxon'; // Luxon 임포트
 
 const { Title, Text } = Typography;
@@ -28,20 +28,32 @@ function WelcomeMessage() {
     return () => clearInterval(timerId);
   }, [currentLuxonTime]); // currentLuxonTime이 변경될 때마다 실행
 
+  // Card title로 사용할 React 노드 생성
+  const cardTitle = (
+    <div>
+      {/* 두 텍스트 모두 기본 Text 사용 */}
+      <Text style={{ fontSize: '16px', display: 'block' }}>{greeting}, {userName}!</Text>
+      <Text style={{ fontSize: '16px', display: 'block' }}>Have a great day!</Text>
+    </div>
+  );
+
   return (
-    <div style={{ marginBottom: '24px' }}>
-      <Title level={3}>{greeting}, {userName}!</Title>
-      <Text>Have a great day!</Text>
-      {/* 날짜 및 시간 표시 (요청된 형식으로) */}
-      <div style={{ marginTop: '8px' }}>
-        <Title level={4} style={{ marginBottom: '0px' }}>
-          {currentLuxonTime.toFormat('yyyy/MM/dd ccc')} {/* YYYY/MM/DD Day */}
+    // title prop에 cardTitle 노드 전달
+    <Card title={cardTitle}>
+      {/* 제목과 날짜/시간 사이에 Divider 추가 */}
+      <Divider style={{ marginTop: '0px', marginBottom: '16px' }} />
+      {/* 날짜 및 시간 표시 */}
+      <div>
+        {/* 날짜 폰트 크기 24px 유지 */}
+        <Title level={4} style={{ margin: 0, fontSize: '24px', lineHeight: '1.2' }}>
+          {currentLuxonTime.toFormat('yyyy/MM/dd (ccc)')} {/* 괄호 추가 */}
         </Title>
-        <Title level={4} style={{ marginTop: '0px' }}>
-          {currentLuxonTime.toFormat('h:mm a')} {/* hh:mm AM/PM */}
+        {/* 시간 폰트 크기 36px로 수정 */}
+        <Title level={2} style={{ margin: 0, fontSize: '36px', lineHeight: '1.2' }}>
+          {currentLuxonTime.toFormat('hh:mm:ss a')} {/* hh 사용 (12시간제) */}
         </Title>
       </div>
-    </div>
+    </Card>
   );
 }
 
