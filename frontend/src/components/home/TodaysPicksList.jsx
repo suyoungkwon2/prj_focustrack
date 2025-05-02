@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { Spin, Typography } from 'antd';
+import { Card, Spin, Typography, Divider } from 'antd';
 import { collection, query, orderBy, limit, onSnapshot } from 'firebase/firestore';
 import { db } from '../../firebase/config'; // Firebase 설정 확인
 import TodaysPicks from './TodaysPicks'; // 개별 Pick 컴포넌트
 
-const { Text } = Typography;
+const { Text, Title } = Typography;
 
 function TodaysPicksList({ userId }) {
   const [picksList, setPicksList] = useState([]);
@@ -32,10 +32,10 @@ function TodaysPicksList({ userId }) {
         id: doc.id,
         ...doc.data() // classifiedTopic, classifiedSummary, sessionIds 등 포함
       }));
-+      // --- 상세 로그 추가 ---
-+      console.log("TodaysPicksList Fetched Picks - Detailed Content:");
-+      fetchedPicks.forEach((pick, index) => console.log(`  Pick ${index}:`, pick));
-+      // --------------------
+      // --- 상세 로그 추가 ---
+      console.log("TodaysPicksList Fetched Picks - Detailed Content:");
+      fetchedPicks.forEach((pick, index) => console.log(`  Pick ${index}:`, pick));
+      // --------------------
       console.log("TodaysPicksList Fetched Picks Data:", fetchedPicks);
       setPicksList(fetchedPicks);
       setLoading(false);
@@ -53,39 +53,50 @@ function TodaysPicksList({ userId }) {
   console.log("TodaysPicksList Rendering State:", { loading, error, picksCount: picksList.length });
 
   if (loading) {
-    return <Spin tip="Loading Today's Picks..." />;
+    return (
+      <Card title="Today's Picks">
+        <Spin tip="Loading Today's Picks..." />
+      </Card>
+    );
   }
 
   if (error) {
-    return <Text type="danger">Error: {error}</Text>;
+    return (
+      <Card title="Today's Picks">
+        <Text type="danger">Error: {error}</Text>
+       </Card>
+    );
   }
 
   if (picksList.length === 0) {
-    return <Text>No picks available for today.</Text>;
+    return (
+      <Card title="Today's Picks">
+         <Text>No picks available for today.</Text>
+       </Card>
+    );
   }
 
   return (
-    <div>
-      {picksList.map(pick => {
-        // results 배열의 첫 번째 요소에서 데이터를 추출
-        // results 배열이 존재하고, 비어있지 않으며, 필요한 필드가 있는지 확인
+    <Card title="Today's Picks">
+      {picksList.map((pick, index) => {
         const mainResult = pick.results && pick.results.length > 0 ? pick.results[0] : null;
         const topic = mainResult ? mainResult.classifiedTopic : undefined;
-        const summary = mainResult ? mainResult.classifiedSummary : undefined; // 요약도 가져올 수 있음 (필요하다면)
+        const summary = mainResult ? mainResult.classifiedSummary : undefined;
         const sIds = mainResult ? mainResult.sessionIds : [];
 
-        // 데이터가 유효한 경우에만 TodaysPicks 렌더링 (예: topic이 있는 경우)
         return topic ? (
-          <TodaysPicks
-          key={pick.id}
-          userId={userId}
-          classifiedTopic={topic}
-          classifiedSummary={summary} // summary prop 추가 (TodaysPicks 컴포넌트에서도 받아야 함)
-          sessionIds={sIds}
-        />
-        ) : null; // topic이 없으면 렌더링하지 않음
+          <React.Fragment key={pick.id}>
+            <TodaysPicks
+              userId={userId}
+              classifiedTopic={topic}
+              classifiedSummary={summary}
+              sessionIds={sIds}
+            />
+            {index < picksList.length - 1 && <Divider style={{ margin: '24px 0' }} />}
+          </React.Fragment>
+        ) : null;
       })}
-    </div>
+    </Card>
   );
 }
 

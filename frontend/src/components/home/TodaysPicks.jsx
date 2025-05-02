@@ -109,43 +109,93 @@ function TodaysPicks({ userId, classifiedTopic, classifiedSummary = [], sessionI
   console.log(`TodaysPicks (${classifiedTopic}): Rendering state`, { loadingSessions, errorSessions, focusSessionsCount: focusSessions.length, sessionsToShowCount: sessionsToShow.length });
   // ---------------
 
-  const renderSession = (session) => {
-     const faviconUrl = getFaviconUrl(session.url);
-     const displayUrl = getDomainFromUrl(session.url); // 또는 전체 URL을 표시할 수 있음
+  const renderSession = (session, idx) => {
+    const faviconUrl = getFaviconUrl(session.url);
+    const displayUrl = getDomainFromUrl(session.url);
 
-      return (
-          <div key={session.id || session.url} style={{ display: 'flex', alignItems: 'center', marginBottom: '8px' }}>
-              {faviconUrl && <Avatar src={faviconUrl} size="small" style={{ marginRight: '8px' }} />}
-               {/* Tooltip으로 전체 URL 표시 */}
-               <Tooltip title={session.url}>
-                 {/* target="_blank" 로 새 탭에서 열리도록 수정 */}
-                 <Link href={session.url} target="_blank" style={{ color: 'inherit', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {displayUrl}
-                 </Link>
-              </Tooltip>
-          </div>
-      );
+    return (
+      <div
+        key={session.id || session.url}
+        style={{ display: 'flex', alignItems: 'center', marginBottom: '8px' }}
+      >
+        {faviconUrl && (
+          <Avatar src={faviconUrl} size="small" style={{ marginRight: '8px' }} />
+        )}
+        <Tooltip title={session.url}>
+          <Link
+            href={session.url}
+            target="_blank"
+            style={{
+              color: 'inherit',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {displayUrl}
+          </Link>
+        </Tooltip>
+
+        {/* 첫 번째 세션 행에 See All/Hide 버튼 우측 정렬 */}
+        {idx === 0 && focusSessions.length > 1 && !loadingSessions && (
+          <Button
+            type="link"
+            icon={isExpanded ? <UpOutlined /> : <DownOutlined />}
+            onClick={() => setIsExpanded(!isExpanded)}
+            style={{ marginLeft: 'auto', padding: 0 }}
+          >
+            {isExpanded ? 'Hide' : 'See All'}
+          </Button>
+        )}
+      </div>
+    );
   };
 
   if (!classifiedTopic) {
-     return null;
+    return null;
   }
 
+  // Card 제거, div로 감싸기
   return (
-    // Ant Design Card 컴포넌트 사용 (추후 디자인에 맞게 수정)
-    <Card title={classifiedTopic} style={{ marginBottom: '24px' }}>
+    <div style={{ padding: '0 16px' }}> {/* 피그마에 맞춰 패딩 조정 가능 */}
+       <Title level={5} style={{ marginBottom: '16px' }}>{classifiedTopic}</Title> {/* 주제 제목 추가 */}
        {/* 요약 내용을 불릿 리스트로 표시 */}
        {Array.isArray(classifiedSummary) && classifiedSummary.length > 0 ? (
          <>
            <ul style={{ paddingLeft: '20px', marginBottom: '8px' }}>
-             {(showAllSummary ? classifiedSummary : classifiedSummary.slice(0, 3)).map((item, index) => (
-               <li key={index}>{item}</li>
-             ))}
+             {/* 항상 처음 3개 또는 전체 표시 */}
+             {(showAllSummary ? classifiedSummary : classifiedSummary.slice(0, 3)).map((item, index) => {
+               // 3번째 항목까지만 보여주고, 더보기 상태가 아니면 나머지는 숨김
+               // if (!showAllSummary && index >= 3) return null; // slice(0,3)으로 대체
+               // 3번째 항목이고, 더 볼 항목이 있고, 축소 상태일 때 more 버튼 추가 - 로직 변경
+               // const isLastVisibleItem = index === 2 && !showAllSummary && classifiedSummary.length > 3;
+               return (
+                 // <li key={index} style={{ display: 'inline' }}> {/* li를 inline으로 변경 시도 */}
+                 <li key={index}>
+                   {item}
+                   {/* {isLastVisibleItem && (
+                     <Button type="link" size="small" onClick={() => setShowAllSummary(true)} style={{ padding: '0 0 0 4px', display: 'inline' }}>
+                        more
+                     </Button>
+                   )} */} 
+                   {/* 마지막 항목 뒤에는 줄바꿈 추가 */}
+                   {/* <br /> */}
+                 </li>
+               );
+             })}
            </ul>
+           {/* 전체 보기 상태이고 3개 초과 시 less 버튼 추가 / 3개 초과고 축소 상태면 more 버튼 */}
            {classifiedSummary.length > 3 && (
-             <Button type="link" size="small" onClick={() => setShowAllSummary(!showAllSummary)} style={{ padding: 0 }}>
-               {showAllSummary ? 'less' : 'more'}
-             </Button>
+              <div style={{ textAlign: 'right' }}>
+                 <Button
+                   type="link"
+                   size="small"
+                   onClick={() => setShowAllSummary(!showAllSummary)}
+                   style={{ padding: 0 }}
+                 >
+                   {showAllSummary ? 'less' : 'more'}
+                 </Button>
+             </div>
            )}
          </>
        ) : (
@@ -158,24 +208,13 @@ function TodaysPicks({ userId, classifiedTopic, classifiedSummary = [], sessionI
       {errorSessions && <Alert message={errorSessions} type="error" showIcon style={{ marginBottom: '8px' }}/>}
 
       {/* 로드된 세션 목록 표시 */}
-      {!loadingSessions && sessionsToShow.map(renderSession)}
+      {!loadingSessions && sessionsToShow.map((s, i) => renderSession(s, i))}
 
-      {/* "See All" 토글 버튼 (세션이 2개 이상일 때만 표시) */}
-      {!loadingSessions && focusSessions.length > 1 && (
-        <Button
-          type="link"
-          icon={isExpanded ? <UpOutlined /> : <DownOutlined />}
-          onClick={() => setIsExpanded(!isExpanded)}
-          style={{ padding: '0', height: 'auto', lineHeight: 'inherit' }} // 버튼 스타일 조정
-        >
-          See All
-        </Button>
-      )}
       {/* 세션 데이터가 없는 경우 (선택 사항) */}
        {!loadingSessions && !errorSessions && focusSessions.length === 0 && sessionIds.length > 0 && (
          <Text type="secondary" style={{ display: 'block', marginTop: '8px' }}>No session details found.</Text>
        )}
-    </Card>
+    </div>
   );
 }
 
