@@ -163,7 +163,7 @@ exports.onFocusSessionCreate = onDocumentCreated("users/{userId}/focusSessions/{
 exports.calculateFocusScoreScheduled = onSchedule({
   region: "us-central1", // 또는 원하는 리전
   schedule: 'every 30 minutes from 5:00 to 4:59',
-  timeZone: 'Asia/Seoul'
+  timeZone: 'America/New_York'
 }, async (_event) => { // 수정: 사용되지 않는 event 변수명 변경
       functions.logger.log('Starting scheduled focus score calculation for all users.');
       try {
@@ -327,7 +327,7 @@ async function processFocusScoreForUser(userId) {
 exports.calculateDailyMetricsScheduled = onSchedule({
   region: "us-central1",
   schedule: "0 5 * * *", // 매일 오전 5시 (서버 시간 기준, KST 자정 무렵)
-  timeZone: "Asia/Seoul", // KST 기준
+  timeZone: "America/New_York", // KST 기준
 }, async (_event) => { // 이전 수정 유지 - 사용되지 않는 _event
     functions.logger.log("Starting scheduled daily metrics calculation for all users.");
     try {
