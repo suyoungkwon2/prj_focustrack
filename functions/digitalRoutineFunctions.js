@@ -28,7 +28,7 @@ const categoryMap = {
 exports.processTenMinuteBlocks = onSchedule({
   region: "us-central1",
   schedule: "*/10 * * * *", // 매 10분마다 실행 (cron 표현식)
-  timeZone: "Asia/Seoul", // 스케줄러 실행 시간대 (계산은 UTC/ET 기준)
+  timeZone: "America/New_York", // 스케줄러 실행 시간대 (계산은 UTC/ET 기준)
   // 추가 옵션 (필요 시): memory, timeoutSeconds 등
 }, async (event) => { // context 대신 event 사용
     console.log("--- processTenMinuteBlocks handler entered ---");
