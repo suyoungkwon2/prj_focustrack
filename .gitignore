@@ -37,7 +37,7 @@ node_modules/
 .DS_Store
 
 # Firebase Admin SDK key (sensitive)
-src/features/focusmetric/focustrack-3ba34-firebase-adminsdk-fbsvc-dc41ebc2c4.json
+src/features/monitoring/focustrack-3ba34-firebase-adminsdk-fbsvc-dc41ebc2c4.json
 
 # Test files
 src/features/monitoring/test_focusmetric.js

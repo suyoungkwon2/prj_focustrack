@@ -192,103 +192,132 @@ exports.calculateFocusScoreScheduled = onSchedule({
 // Helper function to process focus score for a single user
 async function processFocusScoreForUser(userId) {
     functions.logger.log(`Calculating focus score for user ${userId}...`);
+    let scoreDetails; // Define scope for scoreDetails
+    let dailyLogDocIdUTC; // Define scope for daily log UTC date string (doc ID)
+    let dailyLogDateETCycle; // Define scope for daily log ET cycle start timestamp (date field)
     try {
-        // 1. Calculate the score using the imported function
-        // NOTE: calculateAndLogFocusScore already handles the 2-hour window internally
-        const scoreResult = await calculateAndLogFocusScore(db, userId); // db is the admin.firestore() instance
+        // 1. Calculate the score using the imported function - now returns details
+        scoreDetails = await calculateAndLogFocusScore(db, userId); // db is the admin.firestore() instance
 
-        // 2. Determine the correct date string (YYYY-MM-DD) and cycle start time based on the 5 AM ET cycle
-        const now = new Date();
-        // Use Intl.DateTimeFormat for reliable timezone handling - requires Node >= 13
-        // Create a Date object representing the current time in ET
-        const nowET = new Date(now.toLocaleString('en-US', { timeZone: 'America/New_York' }));
+        // 2. Determine the UTC date string (YYYY-MM-DD) for the dailylog document ID
+        const now = new Date(); // Use current time
+        const yearUTC = now.getUTCFullYear();
+        const monthUTC = String(now.getUTCMonth() + 1).padStart(2, '0');
+        const dayUTC = String(now.getUTCDate()).padStart(2, '0');
+        dailyLogDocIdUTC = `${yearUTC}-${monthUTC}-${dayUTC}`; // UTC date string for Document ID
 
-        // Determine the start of the current ET day cycle (5 AM ET)
-        const today5AM_ET = new Date(nowET);
+        // Determine the ET cycle start time for the 'date' field within the document
+        const nowETForCycle = new Date(now.toLocaleString('en-US', { timeZone: 'America/New_York' }));
+        const today5AM_ET = new Date(nowETForCycle);
         today5AM_ET.setHours(5, 0, 0, 0);
-
-        // Determine the date object for the log document (belongs to previous ET day if before 5 AM ET)
-        let logDate = new Date(nowET);
-        if (nowET < today5AM_ET) {
-            logDate.setDate(logDate.getDate() - 1);
+        let etCycleDate = new Date(nowETForCycle);
+        if (nowETForCycle < today5AM_ET) {
+            etCycleDate.setDate(etCycleDate.getDate() - 1); // Belongs to previous ET day cycle
         }
+        dailyLogDateETCycle = admin.firestore.Timestamp.fromDate(new Date(etCycleDate.setHours(5, 0, 0, 0))); // Firestore Timestamp for 5AM ET cycle start
 
-        // Format the date as YYYY-MM-DD for the document ID
-        const year = logDate.getFullYear(); // Use local year (ET based)
-        const month = String(logDate.getMonth() + 1).padStart(2, '0');
-        const day = String(logDate.getDate()).padStart(2, '0');
-        const dateString = `${year}-${month}-${day}`;
+        // 3. Save/Overwrite the score (if calculated) in the *daily log* document (using UTC date ID)
+        const dailyLogRef = db.collection(`users/${userId}/dailylog`).doc(dailyLogDocIdUTC);
 
-        // Get the timestamp for the start of the relevant 5 AM ET cycle
-        const cycleStartTimestamp = new Date(logDate); // Use the determined logDate
-        cycleStartTimestamp.setHours(5, 0, 0, 0); // Represents 5:00:00 AM on the logDate in ET
-
-        // 3. Save/Overwrite the score (if calculated) in the daily log document
-        const logRef = db.collection(`users/${userId}/dailylog`).doc(dateString);
-
-        if (scoreResult !== null) {
-            // Score calculated successfully
-            const scoreData = {
+        if (scoreDetails && scoreDetails.focusScore !== null) {
+            // Score calculated successfully - update dailylog
+            const scoreDataForDailyLog = {
                 latestFocusScore: {
-                    score: scoreResult,
-                    message: admin.firestore.FieldValue.delete(), // Explicitly delete message
-                    error: admin.firestore.FieldValue.delete(),   // Explicitly delete error
-                    calculatedAt: admin.firestore.FieldValue.serverTimestamp()
+                    score: scoreDetails.focusScore,
+                    message: admin.firestore.FieldValue.delete(),
+                    error: admin.firestore.FieldValue.delete(),
+                    calculatedAt: admin.firestore.Timestamp.fromMillis(scoreDetails.calculationTimestamp)
                 },
-                date: admin.firestore.Timestamp.fromDate(cycleStartTimestamp)
+                date: dailyLogDateETCycle // Use ET cycle start timestamp for the date field
             };
-            await logRef.set(scoreData, { merge: true });
-            functions.logger.log(`User ${userId}: Saved focus score ${scoreResult.toFixed(4)} for ET date ${dateString}.`);
+            await dailyLogRef.set(scoreDataForDailyLog, { merge: true });
+            functions.logger.log(`User ${userId}: Updated latestFocusScore ${scoreDetails.focusScore.toFixed(4)} in dailylog/${dailyLogDocIdUTC}.`);
+
+            // --- 4. Save detailed score to FocusScore collection (No changes needed here) ---
+            const utcTimestampString = new Date(scoreDetails.calculationTimestamp).toISOString();
+            const detailedScoreRef = db.collection(`users/${userId}/FocusScore`).doc(utcTimestampString);
+            const detailedData = {
+                calculatedAt: admin.firestore.Timestamp.fromMillis(scoreDetails.calculationTimestamp),
+                savedAt: admin.firestore.FieldValue.serverTimestamp(),
+                focusScore: scoreDetails.focusScore,
+                sf: scoreDetails.sf,
+                cfd: scoreDetails.cfd,
+                wlr: scoreDetails.wlr,
+                sessionsUsed: scoreDetails.sessionsInWindow
+            };
+            try {
+                await detailedScoreRef.set(detailedData);
+                functions.logger.log(`User ${userId}: Saved detailed focus score to FocusScore/${utcTimestampString}. Score: ${scoreDetails.focusScore.toFixed(4)}`);
+            } catch (saveDetailedError) {
+                functions.logger.error(`User ${userId}: Failed to save detailed focus score to FocusScore/${utcTimestampString}:`, saveDetailedError);
+            }
+            // --- End of detailed save logic ---
+
         } else {
-            // No sessions found for score calculation
-            const noScoreData = {
+            // No sessions found for score calculation - update dailylog with null/message
+            const noScoreDataForDailyLog = {
                 latestFocusScore: {
                     score: null,
-                    message: "No sessions found in the calculation window.", // Set message
-                    error: admin.firestore.FieldValue.delete(),            // Explicitly delete error
-                    calculatedAt: admin.firestore.FieldValue.serverTimestamp()
+                    message: "No sessions found in the calculation window.",
+                    error: admin.firestore.FieldValue.delete(),
+                    calculatedAt: admin.firestore.Timestamp.fromMillis(scoreDetails ? scoreDetails.calculationTimestamp : Date.now())
                 },
-                date: admin.firestore.Timestamp.fromDate(cycleStartTimestamp)
+                date: dailyLogDateETCycle // Use ET cycle start timestamp for the date field
             };
-            await logRef.set(noScoreData, { merge: true });
-            functions.logger.log(`User ${userId}: No sessions found to calculate focus score for ET date ${dateString}. Saved null score.`);
+            await dailyLogRef.set(noScoreDataForDailyLog, { merge: true });
+            functions.logger.log(`User ${userId}: No sessions found. Updated latestFocusScore to null in dailylog/${dailyLogDocIdUTC}.`);
+
+            // Log that detailed score wasn't saved
+            if (scoreDetails) {
+                const utcTimestampString = new Date(scoreDetails.calculationTimestamp).toISOString();
+                functions.logger.log(`User ${userId}: No focus score calculated (no sessions). Did not save detailed log to FocusScore/${utcTimestampString}.`);
+            }
         }
 
     } catch (error) {
-        functions.logger.error(`User ${userId}: Failed to process focus score:`, error);
-        // Save error state
+        functions.logger.error(`User ${userId}: Failed to process focus score calculation or initial save:`, error);
+        // Save error state to *daily log* (using UTC date ID)
         try {
-            // Recalculate dateString and cycleStartTimestamp for error logging
-            const now = new Date();
-            const nowET = new Date(now.toLocaleString('en-US', { timeZone: 'America/New_York' }));
-            const today5AM_ET = new Date(nowET);
-            today5AM_ET.setHours(5, 0, 0, 0);
-            let logDate = new Date(nowET);
-            if (nowET < today5AM_ET) {
-                logDate.setDate(logDate.getDate() - 1);
-            }
-            const year = logDate.getFullYear();
-            const month = String(logDate.getMonth() + 1).padStart(2, '0');
-            const day = String(logDate.getDate()).padStart(2, '0');
-            const dateString = `${year}-${month}-${day}`;
-            const cycleStartTimestamp = new Date(logDate);
-            cycleStartTimestamp.setHours(5, 0, 0, 0);
+            // Calculate UTC date string and ET cycle timestamp for error logging
+            const nowForErrorLog = new Date();
+            let errorDocIdUTC = dailyLogDocIdUTC; // Use if already calculated
+            let errorDateETCycle = dailyLogDateETCycle; // Use if already calculated
 
-            const logRef = db.collection(`users/${userId}/dailylog`).doc(dateString);
-            const errorData = {
+            if (!errorDocIdUTC || !errorDateETCycle) {
+                // UTC Date String for Doc ID
+                const yearUTC_E = nowForErrorLog.getUTCFullYear();
+                const monthUTC_E = String(nowForErrorLog.getUTCMonth() + 1).padStart(2, '0');
+                const dayUTC_E = String(nowForErrorLog.getUTCDate()).padStart(2, '0');
+                errorDocIdUTC = `${yearUTC_E}-${monthUTC_E}-${dayUTC_E}`;
+
+                // ET Cycle Start Timestamp for 'date' field
+                const nowETForErrorCycle = new Date(nowForErrorLog.toLocaleString('en-US', { timeZone: 'America/New_York' }));
+                const today5AM_ET_Error = new Date(nowETForErrorCycle);
+                today5AM_ET_Error.setHours(5, 0, 0, 0);
+                let etCycleDateError = new Date(nowETForErrorCycle);
+                if (nowETForErrorCycle < today5AM_ET_Error) {
+                    etCycleDateError.setDate(etCycleDateError.getDate() - 1);
+                }
+                errorDateETCycle = admin.firestore.Timestamp.fromDate(new Date(etCycleDateError.setHours(5, 0, 0, 0)));
+            }
+
+            const dailyLogRef = db.collection(`users/${userId}/dailylog`).doc(errorDocIdUTC);
+            const errorDataForDailyLog = {
                 latestFocusScore: {
                     score: null,
-                    message: admin.firestore.FieldValue.delete(), // Explicitly delete message
-                    error: error.message || "Calculation failed",     // Set error
-                    calculatedAt: admin.firestore.FieldValue.serverTimestamp()
+                    message: admin.firestore.FieldValue.delete(),
+                    error: error.message || "Calculation or initial save failed",
+                    calculatedAt: admin.firestore.Timestamp.fromMillis(scoreDetails ? scoreDetails.calculationTimestamp : Date.now())
                 },
-                date: admin.firestore.Timestamp.fromDate(cycleStartTimestamp)
+                date: errorDateETCycle // Use ET cycle start timestamp for the date field
             };
-            await logRef.set(errorData, { merge: true });
-             functions.logger.log(`User ${userId}: Saved error state for focus score on ET date ${dateString}.`); // Added log
-        } catch (saveError) {
-            functions.logger.error(`User ${userId}: Also failed to save error state for focus score:`, saveError);
+            await dailyLogRef.set(errorDataForDailyLog, { merge: true });
+            functions.logger.log(`User ${userId}: Saved error state for latestFocusScore in dailylog/${errorDocIdUTC}.`);
+        } catch (saveErrorStateError) {
+            const errorDateStrLog = dailyLogDocIdUTC || 'unknown-utc-date-error-occurred-early';
+            functions.logger.error(`User ${userId}: Also failed to save error state to dailylog for UTC date ${errorDateStrLog}:`, saveErrorStateError);
         }
+        // Note: We are not attempting to save an error state to the detailed FocusScore collection in this scenario.
     }
 }
 
@@ -327,31 +356,30 @@ exports.calculateDailyMetricsScheduled = onSchedule({
 // Helper function to process daily metrics for a single user (수정됨)
 async function processDailyMetricsForUser(userId) {
     functions.logger.log(`Calculating daily metrics for user ${userId}...`);
-    let dateString; // Keep for logging scope
-    let cycleStartTimestamp; // Keep for logging scope
+    let dailyLogDocIdUTC; // Keep for logging scope (Now UTC date)
+    let dailyLogDateETCycle; // Keep for logging scope (ET cycle start)
     try {
-        // 멜 수정: 각 계산 함수 호출 시 db 인스턴스를 첫 번째 인자로 전달
+        // Calculate metrics (calls remain the same)
         const averageFocus = await calculateAverageFocus(db, userId);
-        // 멜 수정: 각 계산 함수 호출 시 db 인스턴스를 첫 번째 인자로 전달
         const maxFocus = await calculateMaxFocus(db, userId);
-        // 멜 수정: 각 계산 함수 호출 시 db 인스턴스를 첫 번째 인자로 전달
         const totalBrowsingTime = await calculateTotalBrowsingTime(db, userId);
 
-        // Determine the correct date string (YYYY-MM-DD) and cycle start time based on the 5 AM ET cycle
+        // Determine the UTC date string (YYYY-MM-DD) for the dailylog document ID
         const now = new Date();
-        const nowET = new Date(now.toLocaleString('en-US', { timeZone: 'America/New_York' }));
-        const today5AM_ET = new Date(nowET);
+        const yearUTC = now.getUTCFullYear();
+        const monthUTC = String(now.getUTCMonth() + 1).padStart(2, '0');
+        const dayUTC = String(now.getUTCDate()).padStart(2, '0');
+        dailyLogDocIdUTC = `${yearUTC}-${monthUTC}-${dayUTC}`; // UTC date string for Document ID
+
+        // Determine the ET cycle start time for the 'date' field within the document
+        const nowETForCycle = new Date(now.toLocaleString('en-US', { timeZone: 'America/New_York' }));
+        const today5AM_ET = new Date(nowETForCycle);
         today5AM_ET.setHours(5, 0, 0, 0);
-        let logDate = new Date(nowET);
-        if (nowET < today5AM_ET) {
-            logDate.setDate(logDate.getDate() - 1);
+        let etCycleDate = new Date(nowETForCycle);
+        if (nowETForCycle < today5AM_ET) {
+            etCycleDate.setDate(etCycleDate.getDate() - 1);
         }
-        const year = logDate.getFullYear();
-        const month = String(logDate.getMonth() + 1).padStart(2, '0');
-        const day = String(logDate.getDate()).padStart(2, '0');
-        dateString = `${year}-${month}-${day}`;
-        cycleStartTimestamp = new Date(logDate);
-        cycleStartTimestamp.setHours(5, 0, 0, 0);
+        dailyLogDateETCycle = admin.firestore.Timestamp.fromDate(new Date(etCycleDate.setHours(5, 0, 0, 0))); // Firestore Timestamp for 5AM ET cycle start
 
         const dailyMetricData = {
             dailyMetrics: {
@@ -360,45 +388,48 @@ async function processDailyMetricsForUser(userId) {
                 totalBrowsingSeconds: totalBrowsingTime,
                 updatedAt: admin.firestore.FieldValue.serverTimestamp()
             },
-            date: admin.firestore.Timestamp.fromDate(cycleStartTimestamp) // Use ET cycle start timestamp
+            date: dailyLogDateETCycle // Use ET cycle start timestamp for the date field
         };
-        const logRef = db.collection(`users/${userId}/dailylog`).doc(dateString);
+        const logRef = db.collection(`users/${userId}/dailylog`).doc(dailyLogDocIdUTC);
         await logRef.set(dailyMetricData, { merge: true });
-        functions.logger.log(`User ${userId}: Saved daily metrics (AvgFocus: ${averageFocus.toFixed(0)}s, MaxFocus: ${maxFocus}s, TotalBrowse: ${totalBrowsingTime}s) for ET date ${dateString}.`);
+        functions.logger.log(`User ${userId}: Saved daily metrics (AvgFocus: ${averageFocus.toFixed(0)}s, MaxFocus: ${maxFocus}s, TotalBrowse: ${totalBrowsingTime}s) for UTC date ${dailyLogDocIdUTC}.`);
     } catch (error) {
-        const logDateString = dateString || 'unknown-date-error-occurred-early';
-        functions.logger.error(`User ${userId}: Failed to process daily metrics for ET date ${logDateString}:`, error);
+        const logDateStringForError = dailyLogDocIdUTC || 'unknown-utc-date-error-occurred-early';
+        functions.logger.error(`User ${userId}: Failed to process daily metrics for UTC date ${logDateStringForError}:`, error);
         try {
-            let errorDateStr = dateString;
-            let errorCycleTimestamp = cycleStartTimestamp;
-            // Recalculate if dateString wasn't set before the error
-            if (!errorDateStr || !errorCycleTimestamp) {
-                const now = new Date();
-                const nowET = new Date(now.toLocaleString('en-US', { timeZone: 'America/New_York' }));
-                const today5AM_ET = new Date(nowET);
-                today5AM_ET.setHours(5, 0, 0, 0);
-                let logDate = new Date(nowET);
-                if (nowET < today5AM_ET) {
-                   logDate.setDate(logDate.getDate() - 1);
+             // Calculate UTC date string and ET cycle timestamp for error logging
+            const nowForErrorLog = new Date();
+            let errorDocIdUTC = dailyLogDocIdUTC; // Use if already calculated
+            let errorDateETCycle = dailyLogDateETCycle; // Use if already calculated
+
+            if (!errorDocIdUTC || !errorDateETCycle) {
+                 // UTC Date String for Doc ID
+                const yearUTC_E = nowForErrorLog.getUTCFullYear();
+                const monthUTC_E = String(nowForErrorLog.getUTCMonth() + 1).padStart(2, '0');
+                const dayUTC_E = String(nowForErrorLog.getUTCDate()).padStart(2, '0');
+                errorDocIdUTC = `${yearUTC_E}-${monthUTC_E}-${dayUTC_E}`;
+
+                // ET Cycle Start Timestamp for 'date' field
+                const nowETForErrorCycle = new Date(nowForErrorLog.toLocaleString('en-US', { timeZone: 'America/New_York' }));
+                const today5AM_ET_Error = new Date(nowETForErrorCycle);
+                today5AM_ET_Error.setHours(5, 0, 0, 0);
+                let etCycleDateError = new Date(nowETForErrorCycle);
+                if (nowETForErrorCycle < today5AM_ET_Error) {
+                   etCycleDateError.setDate(etCycleDateError.getDate() - 1);
                 }
-                const year = logDate.getFullYear();
-                const month = String(logDate.getMonth() + 1).padStart(2, '0');
-                const day = String(logDate.getDate()).padStart(2, '0');
-                errorDateStr = `${year}-${month}-${day}`;
-                errorCycleTimestamp = new Date(logDate);
-                errorCycleTimestamp.setHours(5, 0, 0, 0);
+                errorDateETCycle = admin.firestore.Timestamp.fromDate(new Date(etCycleDateError.setHours(5, 0, 0, 0)));
             }
 
-            const logRef = db.collection(`users/${userId}/dailylog`).doc(errorDateStr);
+            const logRef = db.collection(`users/${userId}/dailylog`).doc(errorDocIdUTC);
             const errorData = {
                 dailyMetrics: { error: error.message || "Calculation failed", updatedAt: admin.firestore.FieldValue.serverTimestamp() },
-                date: admin.firestore.Timestamp.fromDate(errorCycleTimestamp) // Use ET cycle start timestamp for error doc
+                date: errorDateETCycle // Use ET cycle start timestamp for error doc's date field
             };
             await logRef.set(errorData, { merge: true });
-            functions.logger.log(`User ${userId}: Saved error state for daily metrics on ET date ${errorDateStr}.`);
+            functions.logger.log(`User ${userId}: Saved error state for daily metrics on UTC date ${errorDocIdUTC}.`);
         } catch (saveError) {
-            const finalDateString = dateString || 'unknown-date-error-occurred-early';
-            functions.logger.error(`User ${userId}: Also failed to save error state for daily metrics on ET date ${finalDateString}:`, saveError);
+            const finalDateStringForError = dailyLogDocIdUTC || 'unknown-utc-date-error-occurred-early';
+            functions.logger.error(`User ${userId}: Also failed to save error state for daily metrics on UTC date ${finalDateStringForError}:`, saveError);
         }
     }
 }

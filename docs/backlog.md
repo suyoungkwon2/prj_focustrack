@@ -12,3 +12,8 @@
         *   사용자별 시간대 정보 저장 (예: `/users/{userId}/settings/timezone`).
         *   `aggregateDailyDurations` 함수 로직 수정: 더 자주(예: 1시간마다) 실행하고, 함수 내부에서 각 사용자의 로컬 시간대를 확인하여 5시가 지났는지 판단 후 조건부 실행.
         *   또는 클라이언트 측에서 사용자의 시간대를 포함하여 데이터 집계 요청을 보내는 방식 고려. 
+
+# 미셸 backlog
+- focus score 30분 단위 저장하기
+- dailylog folder명 UTC 시간으로 저장하기 - 폴더 이름만 UTC이게
+- 유툽 duration 계산시 play time? active time?
