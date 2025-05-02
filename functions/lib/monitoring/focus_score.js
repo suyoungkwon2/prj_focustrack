@@ -244,8 +244,8 @@ export async function calculateAndLogFocusScore(db, userId) {
         const windowEndTime = currentTime;
         const windowStartTime = windowEndTime - twoHoursInMillis;
 
-        const windowEndTimeFormatted = new Date(windowEndTime).toLocaleString();
-        const windowStartTimeFormatted = new Date(windowStartTime).toLocaleString();
+        const windowEndTimeFormatted = new Date(windowEndTime).toLocaleString('en-US', { timeZone: 'America/New_York' });
+        const windowStartTimeFormatted = new Date(windowStartTime).toLocaleString('en-US', { timeZone: 'America/New_York' });
         console.log(`Calculating Focus Score for user ${userId} in window: ${windowStartTimeFormatted} to ${windowEndTimeFormatted} (last 2 hours)`);
         // --------------------------
 
@@ -284,12 +284,28 @@ export async function calculateAndLogFocusScore(db, userId) {
 
             // Phase 3: Calculate Final Score
             const focusScore = calculateFocusScore(switchFrequency, continuousFocusDuration, workLeisureRatio);
-            console.log(`>>> Final Focus Score for User ${userId}: ${(focusScore * 100).toFixed(1)}% <<<`);
-            return focusScore; // Return the calculated score
+            // console.log(`>>> Final Focus Score for User ${userId}: ${(focusScore * 100).toFixed(1)}% <<<`); // Removed logging here
+            // Return detailed results
+            return {
+                focusScore: focusScore,
+                sf: switchFrequency,
+                cfd: continuousFocusDuration,
+                wlr: workLeisureRatio,
+                sessionsInWindow: sessionsInWindow,
+                calculationTimestamp: windowEndTime // Include the timestamp used for the window end
+            };
 
         } else {
             console.log(`No sessions found for user ${userId} in the last 2 hours. No metrics calculated.`);
-            return null; // Return null if no sessions found
+            // Return null score and empty sessions array, but include timestamp
+            return {
+                focusScore: null,
+                sf: 0, // Default values if no sessions
+                cfd: 0,
+                wlr: 0,
+                sessionsInWindow: [],
+                calculationTimestamp: windowEndTime
+            };
         }
     } catch (error) {
         console.error(`Failed to calculate focus score for user ${userId}:`, error);
