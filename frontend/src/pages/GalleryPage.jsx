@@ -15,12 +15,28 @@ const categoryOptions = [
   { value: 'Entertainment', label: 'Entertainment' },
 ];
 
-// 미디어 타입 옵션 추가
+// 미디어 타입 옵션 수정
 const mediaOptions = [
-  { value: 'All Media', label: 'All Media' }, // 기본값
+  { value: 'All Media', label: 'All Media' },
   { value: 'Image', label: 'Image' },
-  // { value: 'Youtube', label: 'Youtube' }, // 추후 추가
+  { value: 'Youtube', label: 'Youtube' }, // Youtube 옵션 추가
 ];
+
+// --- Helper Function: 유튜브 썸네일 URL 생성 ---
+const getYoutubeThumbnailUrl = (youtubeUrl) => {
+  try {
+    const url = new URL(youtubeUrl);
+    const videoId = url.searchParams.get('v');
+    if (videoId) {
+      // mqdefault (320x180), hqdefault (480x360), sddefault (640x480), maxresdefault (1920x1080)
+      return `https://img.youtube.com/vi/${videoId}/mqdefault.jpg`;
+    }
+  } catch (e) {
+    console.error("Error parsing YouTube URL:", youtubeUrl, e);
+  }
+  return null; // 실패 시 null 반환
+};
+// ---------------------------------------------
 
 function GalleryPage() {
   const { currentUser } = useAuth();
@@ -50,28 +66,15 @@ function GalleryPage() {
         let q = query(sessionsRef);
 
         // 1. 날짜 필터링 (endTime 숫자 타입 기준으로 최근 14일)
-        const twoWeeksAgo = dayjs().subtract(14, 'day').startOf('day');
-        // const twoWeeksAgoTimestamp = Timestamp.fromDate(twoWeeksAgo.toDate()); // Timestamp 객체 대신 숫자 사용
-        const twoWeeksAgoMillis = twoWeeksAgo.valueOf(); // 밀리초 타임스탬프(숫자) 가져오기
-        // q = query(q, where('endTime', '>=', twoWeeksAgoTimestamp));
-        q = query(q, where('endTime', '>=', twoWeeksAgoMillis)); // 숫자로 비교
+        const twoWeeksAgoMillis = dayjs().subtract(14, 'day').startOf('day').valueOf();
+        q = query(q, where('endTime', '>=', twoWeeksAgoMillis));
 
         // 2. 카테고리 필터링
         if (categoryFilter !== 'All Categories') {
           q = query(q, where('summaryCategory', '==', categoryFilter));
         }
 
-        // (추후 구현) 3. 미디어 타입 필터링
-        // if (mediaFilter !== 'All Media') {
-        //   if (mediaFilter === 'Image') {
-        //     // images 필드가 존재하거나 특정 조건을 만족하는 쿼리 (Firestore 제한 고려 필요)
-        //     // 예: q = query(q, where('hasImages', '==', true)); // 별도 필드 필요 가능성
-        //   } else if (mediaFilter === 'Youtube') {
-        //     // youtube 관련 필드 쿼리
-        //   }
-        // }
-
-        // 3. 정렬
+        // 3. 정렬 (endTime 기준 내림차순)
         q = query(q, orderBy('endTime', 'desc'));
 
         // --- 로그 추가: Firestore 쿼리 확인 ---
@@ -87,32 +90,47 @@ function GalleryPage() {
 
         querySnapshot.forEach((doc) => {
           const data = doc.data();
-          // --- 로그 추가: 개별 문서 데이터 확인 ---
-          // console.log(` Doc ID: ${doc.id}`, data); // 데이터가 많을 수 있으므로 필요 시 주석 해제
-          // -------------------------------------
+          const sessionEndTime = typeof data.endTime === 'number' ? data.endTime : data.endTime?.toDate ? data.endTime.toDate().getTime() : 0;
+          const formattedDate = sessionEndTime ? dayjs(sessionEndTime).format('YYYY-MM-DD') : 'N/A';
+
+          // 이미지 처리
           if (data.images && Array.isArray(data.images) && data.images.length > 0) {
-             data.images.forEach((imageObj, index) => { // 변수명을 imageUrl -> imageObj 로 변경
-                // if (typeof imageUrl === 'string') { // 문자열 검사 대신 객체와 url 필드 존재 확인
+             data.images.forEach((imageObj, index) => {
                 if (imageObj && typeof imageObj.url === 'string') {
                   fetchedMedia.push({
                     id: `${doc.id}-${index}-img`,
                     type: 'Image',
                     docId: doc.id,
                     originalUrl: data.url,
-                    // mediaUrl: imageUrl,
-                    mediaUrl: imageObj.url, // imageObj.url 사용
-                    date: data.endTime?.toDate ? dayjs(data.endTime.toDate()).format('YYYY-MM-DD') : (typeof data.endTime === 'number' ? dayjs(data.endTime).format('YYYY-MM-DD') : 'N/A'), // endTime 타입 고려
+                    mediaUrl: imageObj.url,
+                    dateMillis: sessionEndTime, // 정렬 위한 밀리초 추가
+                    date: formattedDate,
                     category: data.summaryCategory || 'N/A'
                   });
                 }
              });
           }
 
-          // (추후 구현) 유튜브 등 다른 미디어 처리
-          // if (mediaFilter === 'All Media' || mediaFilter === 'Youtube') {
-          //    // 유튜브 데이터 처리 로직
-          // }
+          // 유튜브 처리
+          if (data.url && data.url.startsWith('https://www.youtube.com/watch') && data.summaryCategory) {
+             const thumbnailUrl = getYoutubeThumbnailUrl(data.url);
+             if (thumbnailUrl) {
+                fetchedMedia.push({
+                    id: `${doc.id}-yt`,
+                    type: 'Youtube',
+                    docId: doc.id,
+                    originalUrl: data.url,
+                    mediaUrl: thumbnailUrl,
+                    dateMillis: sessionEndTime, // 정렬 위한 밀리초 추가
+                    date: formattedDate,
+                    category: data.summaryCategory
+                });
+             }
+          }
         });
+
+        // 클라이언트 측에서 날짜로 다시 정렬 (이미지와 유튜브 통합)
+        fetchedMedia.sort((a, b) => b.dateMillis - a.dateMillis);
 
         // --- 로그 추가: Fetch 후 미디어 데이터 확인 ---
         console.log("GalleryPage Fetched Media (before media filter):", fetchedMedia);
@@ -184,15 +202,14 @@ function GalleryPage() {
                 cover={
                   <a href={item.originalUrl} target="_blank" rel="noopener noreferrer">
                      {/* 이미지 렌더링 (추후 타입별 렌더링 분기) */}
-                     {item.type === 'Image' && (
-                       <Image
-                         alt="Gallery image"
-                         src={item.mediaUrl}
-                         style={{ height: 150, objectFit: 'cover', width: '100%' }}
-                         preview={false}
-                       />
-                     )}
-                     {/* {item.type === 'Youtube' && ( ... 유튜브 썸네일 등 ... )} */}
+                     <Image
+                       alt={`Gallery ${item.type}`}
+                       src={item.mediaUrl}
+                       style={{ height: 150, objectFit: 'cover', width: '100%' }}
+                       preview={false}
+                       // 유튜브 썸네일 로딩 실패 시 대체 이미지 (선택 사항)
+                       fallback="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkqAcAAIUAgUW0RjgAAAAASUVORK5CYII="
+                     />
                   </a>
                 }
                 bodyStyle={{ padding: '12px' }}
