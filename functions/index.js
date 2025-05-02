@@ -326,8 +326,8 @@ async function processFocusScoreForUser(userId) {
 // Updated schedule to run every 30 mins starting at 5 AM
 exports.calculateDailyMetricsScheduled = onSchedule({
   region: "us-central1",
-  schedule: "0 5 * * *", // 매일 오전 5시 (서버 시간 기준, KST 자정 무렵)
-  timeZone: "America/New_York", // KST 기준
+  schedule: "every 30 minutes from 5:00 to 4:59",
+  timeZone: "America/New_York",
 }, async (_event) => { // 이전 수정 유지 - 사용되지 않는 _event
     functions.logger.log("Starting scheduled daily metrics calculation for all users.");
     try {
