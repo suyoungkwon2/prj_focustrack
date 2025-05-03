@@ -267,11 +267,32 @@ async function processFocusScoreForUser(userId) {
             await dailyLogRef.set(noScoreDataForDailyLog, { merge: true });
             functions.logger.log(`User ${userId}: No sessions found. Updated latestFocusScore to null in dailylog/${dailyLogDocIdUTC}.`);
 
-            // Log that detailed score wasn't saved
-            if (scoreDetails) {
+            // --- Save detailed log to FocusScore collection even if score is null ---
+            if (scoreDetails) { // Ensure scoreDetails object exists
                 const utcTimestampString = new Date(scoreDetails.calculationTimestamp).toISOString();
-                functions.logger.log(`User ${userId}: No focus score calculated (no sessions). Did not save detailed log to FocusScore/${utcTimestampString}.`);
+                const detailedScoreRef = db.collection(`users/${userId}/FocusScore`).doc(utcTimestampString);
+                const detailedData = {
+                    calculatedAt: admin.firestore.Timestamp.fromMillis(scoreDetails.calculationTimestamp),
+                    savedAt: admin.firestore.FieldValue.serverTimestamp(),
+                    focusScore: null, // Explicitly save null
+                    sf: scoreDetails.sf !== undefined ? scoreDetails.sf : null, // Use defaults if not present
+                    cfd: scoreDetails.cfd !== undefined ? scoreDetails.cfd : null,
+                    wlr: scoreDetails.wlr !== undefined ? scoreDetails.wlr : null,
+                    sessionsUsed: scoreDetails.sessionsInWindow || [], // Default to empty array
+                    message: "No sessions found in calculation window." // Add message field
+                };
+                try {
+                    await detailedScoreRef.set(detailedData);
+                    functions.logger.log(`User ${userId}: Saved detailed log with null score to FocusScore/${utcTimestampString}.`);
+                } catch (saveDetailedError) {
+                    functions.logger.error(`User ${userId}: Failed to save detailed log with null score to FocusScore/${utcTimestampString}:`, saveDetailedError);
+                }
+            } else {
+                 // This case should ideally not happen if calculateAndLogFocusScore always returns an object
+                 // but log it just in case scoreDetails itself is missing
+                functions.logger.warn(`User ${userId}: scoreDetails object was missing. Cannot save null score details to FocusScore.`);
             }
+            // --- End of detailed save logic for null score ---
         }
 
     } catch (error) {
