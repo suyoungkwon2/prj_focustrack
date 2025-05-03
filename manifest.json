@@ -27,7 +27,7 @@
     }
   ],
   "chrome_url_overrides": {
-    "newtab": "dist/index.html"
+    "newtab": "index.html"
   },
   "content_security_policy": {
     "extension_pages": "script-src 'self'; object-src 'self'"
