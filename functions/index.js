@@ -224,7 +224,7 @@ async function processFocusScoreForUser(userId) {
             const scoreDataForDailyLog = {
                 latestFocusScore: {
                     score: scoreDetails.focusScore,
-                    message: admin.firestore.FieldValue.delete(),
+                    message: admin.firestore.FieldValue.delete(), // Keep removing message/error if score exists
                     error: admin.firestore.FieldValue.delete(),
                     calculatedAt: admin.firestore.Timestamp.fromMillis(scoreDetails.calculationTimestamp)
                 },
@@ -233,17 +233,30 @@ async function processFocusScoreForUser(userId) {
             await dailyLogRef.set(scoreDataForDailyLog, { merge: true });
             functions.logger.log(`User ${userId}: Updated latestFocusScore ${scoreDetails.focusScore.toFixed(4)} in dailylog/${dailyLogDocIdUTC}.`);
 
-            // --- 4. Save detailed score to FocusScore collection (No changes needed here) ---
+            // --- 4. Save detailed score (with new structure) to FocusScore collection ---
             const utcTimestampString = new Date(scoreDetails.calculationTimestamp).toISOString();
             const detailedScoreRef = db.collection(`users/${userId}/FocusScore`).doc(utcTimestampString);
+
+            // Prepare the simplified sessions details
+            const sessionsInWindowDetails = scoreDetails.sessionsInWindow.map(s => ({
+                id: s.id || null,
+                startTime: s.startTime || null,
+                duration: s.duration || 0,
+                category: s.summaryCategory || null
+            }));
+
             const detailedData = {
                 calculatedAt: admin.firestore.Timestamp.fromMillis(scoreDetails.calculationTimestamp),
                 savedAt: admin.firestore.FieldValue.serverTimestamp(),
                 focusScore: scoreDetails.focusScore,
-                sf: scoreDetails.sf,
-                cfd: scoreDetails.cfd,
-                wlr: scoreDetails.wlr,
-                sessionsUsed: scoreDetails.sessionsInWindow
+                sessionsInWindowDetails: sessionsInWindowDetails,
+                rawSwitchFrequency: scoreDetails.sf,
+                normalizedSwitchFrequency: scoreDetails.normalizedSF,
+                rawContinousFocusDuration: scoreDetails.cfd,
+                normalizedContinousFocusDuration: scoreDetails.normalizedCFD,
+                rawWorkLeisureRatio: scoreDetails.wlr, // Can be Infinity
+                normalizedWorkLeisureRatio: scoreDetails.normalizedWLR,
+                // Note: Field order in Firestore isn't strictly guaranteed
             };
             try {
                 await detailedScoreRef.set(detailedData);
@@ -271,14 +284,21 @@ async function processFocusScoreForUser(userId) {
             if (scoreDetails) { // Ensure scoreDetails object exists
                 const utcTimestampString = new Date(scoreDetails.calculationTimestamp).toISOString();
                 const detailedScoreRef = db.collection(`users/${userId}/FocusScore`).doc(utcTimestampString);
+
+                // Prepare empty session details
+                const sessionsInWindowDetails = []; // Empty array as no sessions were used
+
                 const detailedData = {
                     calculatedAt: admin.firestore.Timestamp.fromMillis(scoreDetails.calculationTimestamp),
                     savedAt: admin.firestore.FieldValue.serverTimestamp(),
                     focusScore: null, // Explicitly save null
-                    sf: scoreDetails.sf !== undefined ? scoreDetails.sf : null, // Use defaults if not present
-                    cfd: scoreDetails.cfd !== undefined ? scoreDetails.cfd : null,
-                    wlr: scoreDetails.wlr !== undefined ? scoreDetails.wlr : null,
-                    sessionsUsed: scoreDetails.sessionsInWindow || [], // Default to empty array
+                    sessionsInWindowDetails: sessionsInWindowDetails,
+                    rawSwitchFrequency: scoreDetails.sf, // Will be 0 from focus_score.js
+                    normalizedSwitchFrequency: scoreDetails.normalizedSF, // Will be null
+                    rawContinousFocusDuration: scoreDetails.cfd, // Will be 0
+                    normalizedContinousFocusDuration: scoreDetails.normalizedCFD, // Will be null
+                    rawWorkLeisureRatio: scoreDetails.wlr, // Will be 0
+                    normalizedWorkLeisureRatio: scoreDetails.normalizedWLR, // Will be null
                     message: "No sessions found in calculation window." // Add message field
                 };
                 try {
