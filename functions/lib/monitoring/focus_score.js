@@ -200,7 +200,7 @@ function calculateWLR(sessions) {
  * @param {number} sf - Switch Frequency (raw value).
  * @param {number} cfd - Continuous Focus Duration (raw value, seconds).
  * @param {number} wlr - Work-to-Leisure Ratio (raw value).
- * @returns {number} The final Focus Score (0-1 range).
+ * @returns {object} An object containing the final Focus Score and the normalized components.
  */
 function calculateFocusScore(sf, cfd, wlr) {
     console.log("--- Calculating Final Focus Score ---");
@@ -224,17 +224,23 @@ function calculateFocusScore(sf, cfd, wlr) {
     console.log(`  Weighted Score: (SF ${normalizedSF.toFixed(2)} * 0.2) + (CFD ${normalizedCFD.toFixed(2)} * 0.4) + (WLR ${normalizedWLR.toFixed(2)} * 0.4)`);
     console.log("-------------------------------------");
 
-    return focusScore;
+    // Return an object with score and normalized values
+    return {
+        focusScore: focusScore,
+        normalizedSF: normalizedSF,
+        normalizedCFD: normalizedCFD,
+        normalizedWLR: normalizedWLR
+    };
 }
 
 // --- Main Exported Function ---
 /**
  * Fetches user sessions for the last 2 hours, calculates SF, CFD, WLR,
- * and the final Focus Score. Logs the process and returns the score.
+ * and the final Focus Score. Logs the process and returns the score details.
  *
  * @param {FirebaseFirestore.Firestore} db - The initialized Firestore database instance.
  * @param {string} userId - The ID of the user for whom to calculate the score.
- * @returns {Promise<number|null>} The calculated focus score (0-1 range), or null if no sessions found.
+ * @returns {Promise<object|null>} An object containing the calculated focus score details (raw metrics, normalized metrics, final score, sessions used, timestamp), or details indicating no sessions found.
  */
 export async function calculateAndLogFocusScore(db, userId) {
     try {
@@ -282,27 +288,34 @@ export async function calculateAndLogFocusScore(db, userId) {
             const workLeisureRatio = calculateWLR(sessionsInWindow);
             console.log("Calculated Work-to-Leisure Ratio (WLR - Growth / (Entertainment + Daily Life)):", workLeisureRatio === Infinity ? "Infinity" : workLeisureRatio.toFixed(2));
 
-            // Phase 3: Calculate Final Score
-            const focusScore = calculateFocusScore(switchFrequency, continuousFocusDuration, workLeisureRatio);
-            // console.log(`>>> Final Focus Score for User ${userId}: ${(focusScore * 100).toFixed(1)}% <<<`); // Removed logging here
-            // Return detailed results
+            // Phase 3: Calculate Final Score and get normalized values
+            const scoreResult = calculateFocusScore(switchFrequency, continuousFocusDuration, workLeisureRatio);
+            // console.log(`>>> Final Focus Score for User ${userId}: ${(scoreResult.focusScore * 100).toFixed(1)}% <<<`); // Removed logging here
+
+            // Return detailed results including normalized values
             return {
-                focusScore: focusScore,
+                focusScore: scoreResult.focusScore,
                 sf: switchFrequency,
                 cfd: continuousFocusDuration,
                 wlr: workLeisureRatio,
+                normalizedSF: scoreResult.normalizedSF, // Add normalized value
+                normalizedCFD: scoreResult.normalizedCFD, // Add normalized value
+                normalizedWLR: scoreResult.normalizedWLR, // Add normalized value
                 sessionsInWindow: sessionsInWindow,
                 calculationTimestamp: windowEndTime // Include the timestamp used for the window end
             };
 
         } else {
             console.log(`No sessions found for user ${userId} in the last 2 hours. No metrics calculated.`);
-            // Return null score and empty sessions array, but include timestamp
+            // Return null score and empty sessions array, but include timestamp and default metrics
             return {
                 focusScore: null,
                 sf: 0, // Default values if no sessions
                 cfd: 0,
                 wlr: 0,
+                normalizedSF: null, // Indicate normalization not applicable/done
+                normalizedCFD: null,
+                normalizedWLR: null,
                 sessionsInWindow: [],
                 calculationTimestamp: windowEndTime
             };
