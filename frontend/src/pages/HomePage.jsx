@@ -21,25 +21,27 @@ function HomePage() {
   console.log("HomePage Auth State:", { loadingAuth, userId: currentUser?.uid });
 
   return (
-    <Row gutter={[24, 24]}>
-      <Col span={leftColSpan}>
-        <WelcomeMessage />
-        <SmartAlerts />
-        <Monitoring />
-        <FrequentlyVisitedSites />
-      </Col>
+    <div style={{ maxWidth: '1280px', margin: '0 auto' }}>
+      <Row gutter={[24, 24]}>
+        <Col span={leftColSpan}>
+          <WelcomeMessage />
+          <SmartAlerts />
+          <Monitoring />
+          <FrequentlyVisitedSites />
+        </Col>
 
-      <Col span={middleColSpan}>
-        {loadingAuth && <Spin tip="Initializing user..." />}
-        {!loadingAuth && currentUser && <TodaysPicksList userId={currentUser.uid} />}
-        {!loadingAuth && !currentUser && <Text>Please log in to see Today's Picks.</Text>}
-      </Col>
+        <Col span={middleColSpan}>
+          {loadingAuth && <Spin tip="Initializing user..." />}
+          {!loadingAuth && currentUser && <TodaysPicksList userId={currentUser.uid} />}
+          {!loadingAuth && !currentUser && <Text>Please log in to see Today's Picks.</Text>}
+        </Col>
 
-      <Col span={rightColSpan}>
-        <GSuites />
-        <DigitalRoutine />
-      </Col>
-    </Row>
+        <Col span={rightColSpan}>
+          <GSuites />
+          <DigitalRoutine />
+        </Col>
+      </Row>
+    </div>
   );
 }
 

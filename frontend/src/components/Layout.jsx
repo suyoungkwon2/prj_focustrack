@@ -77,8 +77,10 @@ function Layout() {
   return (
     <AntLayout style={{ minHeight: '100vh' }}>
       <Header style={{ display: 'flex', alignItems: 'center', backgroundColor: 'white', borderBottom: '1px solid #f0f0f0', padding: '0 50px' }}>
-        {/* 로고 Placeholder */}
-        <div className="logo" style={{ color: '#1890ff', marginRight: '24px', fontWeight: 'bold', fontSize: '18px' }}>FocusTrack</div>
+        {/* 로고 Placeholder -> Link로 감싸기 */}
+        <Link to="/" style={{ color: 'inherit', textDecoration: 'none' }}>
+          <div className="logo" style={{ color: '#1890ff', marginRight: '24px', fontWeight: 'bold', fontSize: '18px' }}>FocusTrack</div>
+        </Link>
         <Menu
           theme="light"
           mode="horizontal"
