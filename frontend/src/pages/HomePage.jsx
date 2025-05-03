@@ -25,7 +25,7 @@ function HomePage() {
       <Row gutter={[24, 24]}>
         <Col span={leftColSpan}>
           <WelcomeMessage />
-          <SmartAlerts />
+          {/* <SmartAlerts /> */}
           <Monitoring />
           <FrequentlyVisitedSites />
         </Col>
