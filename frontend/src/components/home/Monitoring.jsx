@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { Card, Space, Spin, Typography, Row, Col } from 'antd';
+import { Card, Space, Spin, Typography, Row, Col, Divider } from 'antd';
 // Firestore import 추가
 import { getFirestore, doc, onSnapshot, Timestamp, collection, query, where, orderBy, getDocs } from 'firebase/firestore';
 import { useAuth } from '../../contexts/AuthContext';
 import { getTodayDateString } from '../../utils/dateUtils'; // 날짜 형식 YYYY-MM-DD 확인됨
-// Recharts import 수정: TinyLineChart 대신 LineChart 사용
+// Recharts import 수정: XAxis, YAxis, CartesianGrid 제거
 import { ResponsiveContainer, LineChart, Tooltip as RechartsTooltip, Line as RechartsLine } from 'recharts';
 // date-fns import 유지
 import { subDays, addDays } from 'date-fns';
@@ -213,13 +213,14 @@ function Monitoring() {
         fetchTrendData();
     }, [currentUser, loadingAuth]);
 
-    // renderMetric 수정: type="secondary" 제거
-    const renderMetric = (title, value, unit = '') => (
-        <div style={{ textAlign: 'left' }}>
+    // renderMetric 수정: valueStyle prop 추가 및 우측 정렬 적용
+    const renderMetric = (title, value, unit = '', valueStyle = {}) => (
+        <div style={{ textAlign: 'left' }}> {/* 제목은 좌측 유지 */}
             <Space align="center" size="small">
                 <Text style={{ fontSize: '14px', fontWeight: 500 }}>{title}</Text>
             </Space>
-            <Title level={4} style={{ margin: '4px 0 0 0', fontWeight: 600 }}>
+            {/* 값 부분: 우측 정렬 및 커스텀 스타일 적용 */}
+            <Title level={4} style={{ margin: '4px 0 0 0', fontWeight: 600, textAlign: 'right', ...valueStyle }}>
                 {loading ? <Spin size="small" /> : (value ?? 'N/A')}
                 {!loading && value !== null && unit && <span style={{ fontSize: '16px', marginLeft: '4px', fontWeight: 500 }}>{unit}</span>}
             </Title>
@@ -230,50 +231,52 @@ function Monitoring() {
         <Card title="Focus Metrics" style={{ marginBottom: 0 }}>
             {error && <Text type="danger" style={{ display: 'block', marginBottom: '16px' }}>{error}</Text>}
             {!error && (
-                <Row gutter={[16, 16]}>
-                    <Col span={12}>
-                        {renderMetric(
-                            '💯 Focus Score',
-                            monitoringData.focusScore !== null ? Math.round(monitoringData.focusScore * 100) : null,
-                            '%'
-                        )}
+                <Row gutter={[16, 10]}>
+                    {/* 1행: Focus Score - 제목 옆에 값 표시, 상단 정렬 */}
+                    <Col span={24}>
+                        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
+                            {/* 제목 */} 
+                            <Space align="center" size="small" style={{ paddingTop: '4px' }}>
+                                <Text style={{ fontSize: '14px', fontWeight: 500 }}>💯 Focus Score</Text>
+                            </Space>
+                            {/* 값 - 직접 Title 렌더링 */} 
+                            <Title level={4} style={{ fontSize: '28px', margin: 0, fontWeight: 600 }}>
+                                {loading ? <Spin size="small" /> : (monitoringData.focusScore !== null ? Math.round(monitoringData.focusScore * 100) : 'N/A')}
+                                {!loading && monitoringData.focusScore !== null && <span style={{ fontSize: '16px', marginLeft: '4px', fontWeight: 500 }}>%</span>}
+                            </Title>
+                        </div>
                     </Col>
-                    <Col span={12}>
-                         {renderMetric(
-                            '⏰ Max Focus',
-                             formatSeconds(monitoringData.maxFocus),
-                             ''
-                         )}
-                    </Col>
-                     <Col span={12}>
-                        {renderMetric(
-                            '⏰ Average Focus',
-                            formatSeconds(monitoringData.averageFocus),
-                            ''
-                        )}
-                    </Col>
-                     <Col span={12}>
+
+                    {/* 2행: Focus Score Trend */}
+                    <Col span={24}>
                        <div style={{ textAlign: 'left' }}>
                             <Space align="center" size="small">
                                 <Text style={{ fontSize: '14px', fontWeight: 500 }}>💯 Focus Score Trend</Text>
                             </Space>
-                             <div style={{ marginTop: '4px', height: '105px' }}>
+                             <div style={{ marginTop: '4px', height: '90px' }}>
                                 {loadingTrend ? (
                                     <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%' }}><Spin /></div>
                                 ) : errorTrend ? (
                                     <Text type="danger">{errorTrend}</Text>
                                 ) : trendData.length > 1 ? (
                                     <ResponsiveContainer width="100%" height="100%">
-                                        <LineChart data={trendData}
+                                        <LineChart 
+                                            data={trendData}
+                                            // 축 제거 후 margin 조정
                                             margin={{ top: 5, right: 5, left: 5, bottom: 5 }}
-                                            >
+                                        >
+                                            {/* CartesianGrid, XAxis, YAxis 제거 */}
+                                            {/* <CartesianGrid strokeDasharray="3 3" vertical={false}/> */}
+                                            {/* <XAxis ... /> */}
+                                            {/* <YAxis ... /> */}
                                             <RechartsTooltip content={<CustomTooltip />} />
                                             <RechartsLine 
                                                 type="monotone" 
                                                 dataKey="value" 
-                                                stroke="#8884d8" 
+                                                stroke="#99DAFF"
                                                 strokeWidth={2} 
                                                 dot={false}
+                                                connectNulls={false}
                                                 isAnimationActive={false}
                                             />
                                         </LineChart>
@@ -284,8 +287,36 @@ function Monitoring() {
                             </div>
                         </div>
                     </Col>
+
+                    {/* Divider */}
+                    <Col span={24}>
+                         <Divider style={{ margin: '8px 0' }} />
+                    </Col>
+
+                    {/* 3행: Average Focus, Divider, Max Focus */}
+                     <Col span={11}>
+                        {renderMetric(
+                            '⏰ Average Focus',
+                            formatSeconds(monitoringData.averageFocus),
+                            '',
+                            { fontSize: '18px' }
+                        )}
+                    </Col>
+                     {/* 세로 Divider 컬럼 - height: 100% 적용 */}
+                     <Col span={1} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                         <Divider type="vertical" style={{ height: '100%' }} />
+                     </Col>
+                     <Col span={11}>
+                         {renderMetric(
+                            '⏰ Max Focus',
+                             formatSeconds(monitoringData.maxFocus),
+                             '',
+                            { fontSize: '18px' }
+                         )}
+                    </Col>
                 </Row>
             )}
+             {/* Overall No Data Message */}
              {!loading && !loadingTrend && !error && !errorTrend && monitoringData.focusScore === null && monitoringData.averageFocus === null && monitoringData.maxFocus === null && trendData.length === 0 && (
                 <Text type="secondary">No monitoring data available for today yet.</Text>
              )}
