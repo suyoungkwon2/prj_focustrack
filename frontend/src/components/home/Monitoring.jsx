@@ -12,10 +12,12 @@ import { subDays, addDays } from 'date-fns';
 import dayjs from 'dayjs';
 import utc from 'dayjs/plugin/utc'; // UTC 플러그인
 import timezone from 'dayjs/plugin/timezone'; // 타임존 플러그인
+import isBetween from 'dayjs/plugin/isBetween'; // isBetween 플러그인 추가
 
 // dayjs 플러그인 활성화
 dayjs.extend(utc);
 dayjs.extend(timezone);
+dayjs.extend(isBetween); // isBetween 활성화
 
 const { Title, Text } = Typography;
 
@@ -65,8 +67,9 @@ function Monitoring() {
         averageFocus: null,
         maxFocus: null,
     });
-    // Trend Graph State
+    // Trend Graph State - 오늘/어제 데이터 분리
     const [trendData, setTrendData] = useState([]);
+    const [yesterdayTrendData, setYesterdayTrendData] = useState([]); // 어제 데이터 상태 추가
     const [loadingTrend, setLoadingTrend] = useState(true);
     const [errorTrend, setErrorTrend] = useState(null);
 
@@ -137,11 +140,14 @@ function Monitoring() {
 
     }, [currentUser, loadingAuth]); // 의존성 배열 유지
 
-    // Effect for Focus Score Trend data
+    // Effect for Focus Score Trend data (Today & Yesterday)
     useEffect(() => {
         if (loadingAuth || !currentUser) {
             setLoadingTrend(loadingAuth);
-            if (!currentUser && !loadingAuth) setTrendData([]);
+            if (!currentUser && !loadingAuth) {
+                setTrendData([]);
+                setYesterdayTrendData([]); // 어제 데이터도 초기화
+            }
             return;
         }
 
@@ -149,62 +155,87 @@ function Monitoring() {
         setErrorTrend(null);
 
         const fetchTrendData = async () => {
-            // date-fns-tz 동적 import 및 관련 코드 제거
             try {
                 const db = getFirestore();
                 const userId = currentUser.uid;
                 const timeZone = 'America/New_York';
 
-                // Calculate 5 AM ET cycle boundaries using dayjs
-                const now = dayjs(); // 현재 시간 dayjs 객체
-                const nowET = now.tz(timeZone); // 현재 시간을 ET로 변환
-
-                let cycleStartDateET = nowET.hour(5).minute(0).second(0).millisecond(0);
-
-                if (nowET.isBefore(cycleStartDateET)) {
-                    cycleStartDateET = cycleStartDateET.subtract(1, 'day');
+                // --- 오늘 날짜 계산 (5AM ET 기준) ---
+                const now = dayjs();
+                const nowET = now.tz(timeZone);
+                let todayCycleStartDateET = nowET.hour(5).minute(0).second(0).millisecond(0);
+                if (nowET.isBefore(todayCycleStartDateET)) {
+                    todayCycleStartDateET = todayCycleStartDateET.subtract(1, 'day');
                 }
-                // dayjs 객체는 불변(immutable)이므로, add는 새로운 객체를 반환
-                const cycleEndDateET = cycleStartDateET.add(1, 'day');
+                const todayCycleEndDateET = todayCycleStartDateET.add(1, 'day');
+                const todayStartTimestamp = Timestamp.fromDate(todayCycleStartDateET.toDate());
+                const todayEndTimestamp = Timestamp.fromDate(todayCycleEndDateET.toDate());
 
-                // Firestore Timestamp 로 변환
-                const cycleStartTimestamp = Timestamp.fromDate(cycleStartDateET.toDate());
-                const cycleEndTimestamp = Timestamp.fromDate(cycleEndDateET.toDate());
+                // --- 어제 날짜 계산 (5AM ET 기준) ---
+                const yesterdayCycleStartDateET = todayCycleStartDateET.subtract(1, 'day');
+                const yesterdayCycleEndDateET = todayCycleStartDateET; // 어제 끝 = 오늘 시작
+                const yesterdayStartTimestamp = Timestamp.fromDate(yesterdayCycleStartDateET.toDate());
+                const yesterdayEndTimestamp = todayStartTimestamp; // 어제 끝 = 오늘 시작 타임스탬프
 
-                console.log(`Monitoring Trend: Fetching data between ${cycleStartDateET.toISOString()} ET and ${cycleEndDateET.toISOString()} ET`);
-                console.log(`Monitoring Trend: Querying between ${cycleStartTimestamp.toDate().toISOString()} UTC and ${cycleEndTimestamp.toDate().toISOString()} UTC`);
+                console.log(`Monitoring Trend: Today Query [${todayStartTimestamp.toDate().toISOString()} UTC, ${todayEndTimestamp.toDate().toISOString()} UTC)`);
+                console.log(`Monitoring Trend: Yesterday Query [${yesterdayStartTimestamp.toDate().toISOString()} UTC, ${yesterdayEndTimestamp.toDate().toISOString()} UTC)`);
 
+                // --- 데이터 처리 함수 ---
+                const processSnapshot = (snapshot, datePrefix = '') => {
+                    const data = snapshot.docs.map(doc => {
+                        const docData = doc.data();
+                        const jsDate = docData.calculatedAt?.toDate();
+                        if (!jsDate) return null;
+
+                        const timeString = dayjs(jsDate).tz(timeZone).format('HH:mm');
+                        const score = docData.focusScore !== null && docData.focusScore !== undefined
+                                        ? Math.round(docData.focusScore * 100)
+                                        : null;
+                        // key값 고유하게 만들기 (날짜 정보 추가 고려 가능하나 일단 시간만 사용)
+                        return score !== null ? { time: timeString, value: score, timestamp: jsDate } : null;
+                    }).filter(item => item !== null);
+                    data.sort((a, b) => a.timestamp - b.timestamp);
+                    return data;
+                };
+
+                // --- Firestore 쿼리 (오늘 & 어제) ---
                 const focusScoreCollectionRef = collection(db, `users/${userId}/FocusScore`);
-                const q = query(
+
+                const todayQuery = query(
                     focusScoreCollectionRef,
-                    where('calculatedAt', '>=', cycleStartTimestamp),
-                    where('calculatedAt', '<', cycleEndTimestamp),
+                    where('calculatedAt', '>=', todayStartTimestamp),
+                    where('calculatedAt', '<', todayEndTimestamp),
                     orderBy('calculatedAt', 'asc')
                 );
 
-                const querySnapshot = await getDocs(q);
-                const fetchedData = querySnapshot.docs.map(doc => {
-                    const docData = doc.data();
-                    const jsDate = docData.calculatedAt?.toDate();
-                    if (!jsDate) return null;
+                const yesterdayQuery = query(
+                    focusScoreCollectionRef,
+                    where('calculatedAt', '>=', yesterdayStartTimestamp),
+                    where('calculatedAt', '<', yesterdayEndTimestamp), // '<' 사용 (오늘 시작 시간 미포함)
+                    orderBy('calculatedAt', 'asc')
+                );
 
-                    // dayjs를 사용하여 시간 포맷팅
-                    const timeString = dayjs(jsDate).tz(timeZone).format('HH:mm');
+                // 두 쿼리 동시에 실행
+                const [todaySnapshot, yesterdaySnapshot] = await Promise.all([
+                    getDocs(todayQuery),
+                    getDocs(yesterdayQuery)
+                ]);
 
-                    const score = docData.focusScore !== null && docData.focusScore !== undefined
-                                    ? Math.round(docData.focusScore * 100)
-                                    : null;
-                    return score !== null ? { time: timeString, value: score, timestamp: jsDate } : null;
-                }).filter(item => item !== null);
+                // 데이터 처리 및 상태 업데이트
+                const todayData = processSnapshot(todaySnapshot, 'today-');
+                const yesterdayData = processSnapshot(yesterdaySnapshot, 'yesterday-');
 
-                fetchedData.sort((a, b) => a.timestamp - b.timestamp);
-                console.log("Monitoring Trend: Fetched data points:", fetchedData.length);
-                setTrendData(fetchedData);
+                console.log("Monitoring Trend: Fetched today data points:", todayData.length);
+                console.log("Monitoring Trend: Fetched yesterday data points:", yesterdayData.length);
+
+                setTrendData(todayData);
+                setYesterdayTrendData(yesterdayData);
 
             } catch (error) {
                 console.error("Monitoring Trend: Error fetching data: ", error);
-                setErrorTrend("Failed to load focus score trend."); // 일반 에러 메시지
+                setErrorTrend("Failed to load focus score trend.");
                 setTrendData([]);
+                setYesterdayTrendData([]);
             } finally {
                 setLoadingTrend(false);
             }
@@ -252,37 +283,58 @@ function Monitoring() {
                        <div style={{ textAlign: 'left' }}>
                             <Space align="center" size="small">
                                 <Text style={{ fontSize: '14px', fontWeight: 500 }}>💯 Focus Score Trend</Text>
+                                {/* 범례 (선택 사항) */}
+                                <Space size={4} style={{ marginLeft: 8, fontSize: 12 }}>
+                                    <span style={{ color: '#99DAFF' }}>■</span> Today
+                                    <span style={{ color: '#cccccc', marginLeft: 4 }}>■</span> Yesterday
+                                </Space>
                             </Space>
                              <div style={{ marginTop: '4px', height: '90px' }}>
                                 {loadingTrend ? (
                                     <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%' }}><Spin /></div>
                                 ) : errorTrend ? (
                                     <Text type="danger">{errorTrend}</Text>
-                                ) : trendData.length > 1 ? (
+                                // 데이터가 하나라도 있을 때 차트 표시 (최소 2포인트 조건은 각 라인에 개별 적용 어려움, 일단 표시)
+                                ) : (trendData.length > 0 || yesterdayTrendData.length > 0) ? (
                                     <ResponsiveContainer width="100%" height="100%">
-                                        <LineChart 
-                                            data={trendData}
-                                            // 축 제거 후 margin 조정
-                                            margin={{ top: 5, right: 5, left: 5, bottom: 5 }}
-                                        >
-                                            {/* CartesianGrid, XAxis, YAxis 제거 */}
-                                            {/* <CartesianGrid strokeDasharray="3 3" vertical={false}/> */}
-                                            {/* <XAxis ... /> */}
-                                            {/* <YAxis ... /> */}
+                                        {/* syncId 추가하여 툴팁 동기화 시도 (선택 사항) */}
+                                        <LineChart margin={{ top: 5, right: 5, left: 5, bottom: 5 }} syncId="focusTrend">
+                                            {/* X축, Y축, Grid 제거됨 */}
+                                            {/* 툴팁 */}
                                             <RechartsTooltip content={<CustomTooltip />} />
-                                            <RechartsLine 
-                                                type="monotone" 
-                                                dataKey="value" 
-                                                stroke="#99DAFF"
-                                                strokeWidth={2} 
-                                                dot={false}
-                                                connectNulls={false}
-                                                isAnimationActive={false}
-                                            />
+                                            {/* 오늘 데이터 라인 */}
+                                            {trendData.length > 0 && (
+                                                <RechartsLine
+                                                    type="monotone"
+                                                    dataKey="value"
+                                                    data={trendData} // 데이터 명시
+                                                    stroke="#99DAFF"
+                                                    strokeWidth={2}
+                                                    dot={false}
+                                                    connectNulls={false}
+                                                    isAnimationActive={false}
+                                                    name="Today" // 툴팁용 이름
+                                                />
+                                            )}
+                                            {/* 어제 데이터 라인 */}
+                                            {yesterdayTrendData.length > 0 && (
+                                                <RechartsLine
+                                                    type="monotone"
+                                                    dataKey="value"
+                                                    data={yesterdayTrendData} // 데이터 명시
+                                                    stroke="#cccccc" // 회색
+                                                    strokeWidth={2}
+                                                    strokeDasharray="5 5" // 점선
+                                                    dot={false}
+                                                    connectNulls={false}
+                                                    isAnimationActive={false}
+                                                    name="Yesterday" // 툴팁용 이름
+                                                />
+                                            )}
                                         </LineChart>
                                     </ResponsiveContainer>
                                 ) : (
-                                    <Text type="secondary">{trendData.length <= 1 ? 'Need more data for trend.' : 'No trend data available.'}</Text>
+                                    <Text type="secondary">No trend data available for today or yesterday.</Text>
                                 )}
                             </div>
                         </div>
