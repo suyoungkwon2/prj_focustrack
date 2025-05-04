@@ -1,5 +1,5 @@
 import React from 'react';
-import { Row, Col, Spin, Typography } from 'antd';
+import { Row, Col, Spin, Typography, Space } from 'antd';
 import { useAuth } from '../contexts/AuthContext';
 import WelcomeMessage from '../components/home/WelcomeMessage';
 import Monitoring from '../components/home/Monitoring';
@@ -24,10 +24,12 @@ function HomePage() {
     <div style={{ maxWidth: '1280px', margin: '0 auto' }}>
       <Row gutter={[24, 24]}>
         <Col span={leftColSpan}>
-          <WelcomeMessage />
-          {/* <SmartAlerts /> */}
-          <Monitoring />
-          <FrequentlyVisitedSites />
+          <Space direction="vertical" size={24} style={{ width: '100%' }}>
+            <WelcomeMessage />
+            {/* <SmartAlerts /> */}
+            <GSuites />
+            <FrequentlyVisitedSites />
+          </Space>
         </Col>
 
         <Col span={middleColSpan}>
@@ -37,8 +39,10 @@ function HomePage() {
         </Col>
 
         <Col span={rightColSpan}>
-          <GSuites />
-          <DigitalRoutine />
+          <Space direction="vertical" size={24} style={{ width: '100%' }}>
+            <Monitoring />
+            <DigitalRoutine />
+          </Space>
         </Col>
       </Row>
     </div>

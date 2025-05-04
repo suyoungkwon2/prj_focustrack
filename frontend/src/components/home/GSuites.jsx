@@ -25,7 +25,7 @@ const linkStyle = {
 
 function GSuites() {
   return (
-    <Card title="G-Suites" style={{ marginBottom: '24px' }}>
+    <Card title="G-Suites" style={{ marginBottom: 0 }}>
       <Row gutter={[16, 16]}>
         {gSuitesData.map((suite) => (
           <Col span={6} key={suite.name} style={{ textAlign: 'center' }}>

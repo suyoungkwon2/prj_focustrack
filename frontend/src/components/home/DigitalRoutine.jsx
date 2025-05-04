@@ -18,7 +18,7 @@ const CATEGORIES = {
   Growth: { // 키: Growth
     color: '#99DAFF', icon: '📘', nameColor: 'black',
     tooltip: '📘 Learning-focused: study, coding, research, lectures.', // 툴팁
-    displayName: 'Growth'
+    displayName: 'Learning' // 표시 이름 변경
   },
   DailyLife: { // 키: DailyLife
     color: '#FFDDAD', icon: '🏠', nameColor: 'black',
@@ -337,7 +337,7 @@ function DigitalRoutine() {
 
   // 최종 렌더링
   return (
-    <Card title="Digital Routine" style={{ marginBottom: '24px' }}>
+    <Card title="Digital Routine" style={{ marginBottom: 0 }}>
       {/* Auth 로딩 중 메시지 */}
       {loadingAuth && <Text>Please wait, initializing user state...</Text>}
 
