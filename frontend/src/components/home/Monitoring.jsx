@@ -4,8 +4,8 @@ import { Card, Space, Spin, Typography, Row, Col, Divider } from 'antd';
 import { getFirestore, doc, onSnapshot, Timestamp, collection, query, where, orderBy, getDocs } from 'firebase/firestore';
 import { useAuth } from '../../contexts/AuthContext';
 import { getTodayDateString } from '../../utils/dateUtils'; // 날짜 형식 YYYY-MM-DD 확인됨
-// Recharts import 수정: XAxis, YAxis, CartesianGrid 제거
-import { ResponsiveContainer, LineChart, Tooltip as RechartsTooltip, Line as RechartsLine } from 'recharts';
+// Recharts import 수정: XAxis 추가
+import { ResponsiveContainer, LineChart, Tooltip as RechartsTooltip, Line as RechartsLine, XAxis } from 'recharts';
 // date-fns import 유지
 import { subDays, addDays } from 'date-fns';
 // dayjs import 추가
@@ -46,12 +46,41 @@ const formatSeconds = (totalSeconds) => {
     return result.trim();
 };
 
-// Recharts Tooltip 커스텀 컨텐츠 (밖으로 빼서 재선언 방지)
-const CustomTooltip = ({ active, payload }) => {
-    if (active && payload && payload.length) {
+// Recharts Tooltip 커스텀 컨텐츠 수정
+const CustomTooltip = ({ active, payload, label, trendData = [], yesterdayTrendData = [] }) => {
+    // label은 X축 값 (타임스탬프)
+    if (active && payload && payload.length && label) {
+        // 현재 label(타임스탬프)에 가장 가까운 데이터 포인트를 각 배열에서 찾기
+        // (payload에는 여러 데이터가 겹쳐있을 수 있으므로 label 기준으로 찾는 것이 더 정확할 수 있음)
+        // 여기서는 간단히 payload의 첫 번째 항목의 타임스탬프를 기준으로 함
+        const currentTimestamp = payload[0]?.payload?.timestamp?.getTime(); // payload[0]의 타임스탬프 사용
+        const currentTimeString = currentTimestamp ? dayjs(currentTimestamp).tz('America/New_York').format('HH:mm') : '';
+
+        // payload에서 오늘/어제 값 찾기 (name prop 기준)
+        const todayPayload = payload.find(p => p.name === 'Today');
+        const yesterdayPayload = payload.find(p => p.name === 'Yesterday');
+
+        // payload에 없는 경우, 전체 데이터에서 시간 기준으로 다시 찾아볼 수도 있음 (여기서는 생략)
+
         return (
-            <div style={{ backgroundColor: 'white', border: '1px solid #ccc', padding: '5px' }}>
-                <p style={{ margin: 0 }}>{`${payload[0].payload.time}: ${payload[0].value}%`}</p>
+            <div style={{ backgroundColor: 'rgba(255, 255, 255, 0.9)', border: '1px solid #ccc', padding: '10px', fontSize: '12px' }}>
+                 <p style={{ margin: 0, marginBottom: '5px', fontWeight: 'bold' }}>{currentTimeString}</p>
+                 {/* 오늘 데이터 표시 */}
+                 {todayPayload && (
+                    <p style={{ margin: 0, color: todayPayload.stroke }}>
+                         <span style={{ display: 'inline-block', width: '10px', height: '10px', backgroundColor: todayPayload.stroke, marginRight: '5px' }}></span>
+                         Today: {todayPayload.value}%
+                    </p>
+                 )}
+                  {/* 어제 데이터 표시 */}
+                 {yesterdayPayload && (
+                      <p style={{ margin: 0, color: yesterdayPayload.stroke }}>
+                         <span style={{ display: 'inline-block', width: '10px', height: '10px', backgroundColor: yesterdayPayload.stroke, marginRight: '5px' }}></span>
+                          Yesterday: {yesterdayPayload.value}%
+                     </p>
+                 )}
+                  {/* 둘 다 없는 경우 (호버 위치 문제 등) */}
+                  {!todayPayload && !yesterdayPayload && <p style={{ margin: 0 }}>No data at this point</p>}
             </div>
         );
     }
@@ -72,6 +101,9 @@ function Monitoring() {
     const [yesterdayTrendData, setYesterdayTrendData] = useState([]); // 어제 데이터 상태 추가
     const [loadingTrend, setLoadingTrend] = useState(true);
     const [errorTrend, setErrorTrend] = useState(null);
+    // X축 도메인 상태 추가
+    const [xAxisDomain, setXAxisDomain] = useState([0, 0]);
+    const [xAxisTicks, setXAxisTicks] = useState([]);
 
     useEffect(() => {
         if (loadingAuth) {
@@ -160,74 +192,73 @@ function Monitoring() {
                 const userId = currentUser.uid;
                 const timeZone = 'America/New_York';
 
-                // --- 오늘 날짜 계산 (5AM ET 기준) ---
+                // --- 날짜 계산 (5AM ET 기준) ---
                 const now = dayjs();
                 const nowET = now.tz(timeZone);
                 let todayCycleStartDateET = nowET.hour(5).minute(0).second(0).millisecond(0);
                 if (nowET.isBefore(todayCycleStartDateET)) {
                     todayCycleStartDateET = todayCycleStartDateET.subtract(1, 'day');
                 }
-                const todayCycleEndDateET = todayCycleStartDateET.add(1, 'day');
+                const todayCycleEndDateET = todayCycleStartDateET.add(1, 'day'); // 오늘 5AM ~ 다음날 5AM
+                const yesterdayCycleStartDateET = todayCycleStartDateET.subtract(1, 'day'); // 어제 5AM
+                const yesterdayCycleEndDateET = todayCycleStartDateET; // 어제 끝 = 오늘 시작
+
                 const todayStartTimestamp = Timestamp.fromDate(todayCycleStartDateET.toDate());
                 const todayEndTimestamp = Timestamp.fromDate(todayCycleEndDateET.toDate());
-
-                // --- 어제 날짜 계산 (5AM ET 기준) ---
-                const yesterdayCycleStartDateET = todayCycleStartDateET.subtract(1, 'day');
-                const yesterdayCycleEndDateET = todayCycleStartDateET; // 어제 끝 = 오늘 시작
                 const yesterdayStartTimestamp = Timestamp.fromDate(yesterdayCycleStartDateET.toDate());
-                const yesterdayEndTimestamp = todayStartTimestamp; // 어제 끝 = 오늘 시작 타임스탬프
+                const yesterdayEndTimestamp = todayStartTimestamp;
+
+                // --- X축 도메인 및 틱 설정 ---
+                const startMillis = todayCycleStartDateET.valueOf(); // 오늘 5AM 밀리초
+                const endMillis = todayCycleEndDateET.valueOf();     // 다음날 5AM 밀리초
+                setXAxisDomain([startMillis, endMillis]);
+
+                const ticks = [];
+                let currentTick = todayCycleStartDateET;
+                while (currentTick.isBefore(todayCycleEndDateET.add(1, 'hour'))) { // 다음날 5시까지 포함하여 틱 생성
+                     // 3시간 간격 틱 생성 (05:00, 08:00, 11:00, ...)
+                    if (currentTick.hour() % 3 === (5 % 3)) { // 5시 기준 3시간 간격
+                         ticks.push(currentTick.valueOf());
+                    }
+                     currentTick = currentTick.add(1, 'hour');
+                 }
+                setXAxisTicks(ticks);
+                 console.log("Monitoring Trend: XAxis Domain:", new Date(startMillis), new Date(endMillis));
+                 console.log("Monitoring Trend: XAxis Ticks:", ticks.map(t => dayjs(t).tz(timeZone).format('HH:mm')));
+
 
                 console.log(`Monitoring Trend: Today Query [${todayStartTimestamp.toDate().toISOString()} UTC, ${todayEndTimestamp.toDate().toISOString()} UTC)`);
                 console.log(`Monitoring Trend: Yesterday Query [${yesterdayStartTimestamp.toDate().toISOString()} UTC, ${yesterdayEndTimestamp.toDate().toISOString()} UTC)`);
 
-                // --- 데이터 처리 함수 ---
-                const processSnapshot = (snapshot, datePrefix = '') => {
+                // --- 데이터 처리 함수 (xValue: 타임스탬프 사용) ---
+                const processSnapshot = (snapshot) => {
                     const data = snapshot.docs.map(doc => {
                         const docData = doc.data();
                         const jsDate = docData.calculatedAt?.toDate();
                         if (!jsDate) return null;
 
-                        const timeString = dayjs(jsDate).tz(timeZone).format('HH:mm');
                         const score = docData.focusScore !== null && docData.focusScore !== undefined
                                         ? Math.round(docData.focusScore * 100)
                                         : null;
-                        // key값 고유하게 만들기 (날짜 정보 추가 고려 가능하나 일단 시간만 사용)
-                        return score !== null ? { time: timeString, value: score, timestamp: jsDate } : null;
+                        // xValue: 밀리초 타임스탬프, value: 점수, timestamp: Date 객체 (정렬용)
+                        return score !== null ? { xValue: jsDate.getTime(), value: score, timestamp: jsDate } : null;
                     }).filter(item => item !== null);
+                    // 정렬은 타임스탬프 기준으로
                     data.sort((a, b) => a.timestamp - b.timestamp);
                     return data;
                 };
 
                 // --- Firestore 쿼리 (오늘 & 어제) ---
                 const focusScoreCollectionRef = collection(db, `users/${userId}/FocusScore`);
+                const todayQuery = query(focusScoreCollectionRef, where('calculatedAt', '>=', todayStartTimestamp), where('calculatedAt', '<', todayEndTimestamp), orderBy('calculatedAt', 'asc'));
+                const yesterdayQuery = query(focusScoreCollectionRef, where('calculatedAt', '>=', yesterdayStartTimestamp), where('calculatedAt', '<', yesterdayEndTimestamp), orderBy('calculatedAt', 'asc'));
 
-                const todayQuery = query(
-                    focusScoreCollectionRef,
-                    where('calculatedAt', '>=', todayStartTimestamp),
-                    where('calculatedAt', '<', todayEndTimestamp),
-                    orderBy('calculatedAt', 'asc')
-                );
-
-                const yesterdayQuery = query(
-                    focusScoreCollectionRef,
-                    where('calculatedAt', '>=', yesterdayStartTimestamp),
-                    where('calculatedAt', '<', yesterdayEndTimestamp), // '<' 사용 (오늘 시작 시간 미포함)
-                    orderBy('calculatedAt', 'asc')
-                );
-
-                // 두 쿼리 동시에 실행
-                const [todaySnapshot, yesterdaySnapshot] = await Promise.all([
-                    getDocs(todayQuery),
-                    getDocs(yesterdayQuery)
-                ]);
-
-                // 데이터 처리 및 상태 업데이트
-                const todayData = processSnapshot(todaySnapshot, 'today-');
-                const yesterdayData = processSnapshot(yesterdaySnapshot, 'yesterday-');
+                const [todaySnapshot, yesterdaySnapshot] = await Promise.all([getDocs(todayQuery), getDocs(yesterdayQuery)]);
+                const todayData = processSnapshot(todaySnapshot);
+                const yesterdayData = processSnapshot(yesterdaySnapshot);
 
                 console.log("Monitoring Trend: Fetched today data points:", todayData.length);
                 console.log("Monitoring Trend: Fetched yesterday data points:", yesterdayData.length);
-
                 setTrendData(todayData);
                 setYesterdayTrendData(yesterdayData);
 
@@ -257,6 +288,11 @@ function Monitoring() {
             </Title>
         </div>
     );
+
+    // X축 틱 포맷터 정의 (타임스탬프 -> HH:mm)
+    const xAxisTickFormatter = (timestamp) => {
+        return dayjs(timestamp).tz('America/New_York').format('HH:mm');
+    };
 
     return (
         <Card title="Focus Metrics" style={{ marginBottom: 0 }}>
@@ -297,23 +333,34 @@ function Monitoring() {
                                 // 데이터가 하나라도 있을 때 차트 표시 (최소 2포인트 조건은 각 라인에 개별 적용 어려움, 일단 표시)
                                 ) : (trendData.length > 0 || yesterdayTrendData.length > 0) ? (
                                     <ResponsiveContainer width="100%" height="100%">
-                                        {/* syncId 추가하여 툴팁 동기화 시도 (선택 사항) */}
-                                        <LineChart margin={{ top: 5, right: 5, left: 5, bottom: 5 }} syncId="focusTrend">
-                                            {/* X축, Y축, Grid 제거됨 */}
-                                            {/* 툴팁 */}
-                                            <RechartsTooltip content={<CustomTooltip />} />
+                                        <LineChart margin={{ top: 5, right: 5, left: 5, bottom: 5 }}>
+                                            {/* XAxis 추가 및 설정 */}
+                                            <XAxis
+                                                dataKey="xValue" // 데이터 키를 타임스탬프로 변경
+                                                type="number"    // 축 타입을 숫자로
+                                                domain={xAxisDomain} // 계산된 도메인 설정
+                                                ticks={xAxisTicks}  // 계산된 틱 설정
+                                                tickFormatter={xAxisTickFormatter} // 포맷터 적용
+                                                tick={{ fontSize: 10 }}
+                                                axisLine={false} // 축 선 숨기기
+                                                tickLine={false} // 틱 선 숨기기
+                                                padding={{ left: 10, right: 10 }} // 좌우 패딩 추가
+                                            />
+                                            {/* YAxis는 제거된 상태 유지 */}
+                                            {/* 툴팁 - props 전달 방식 변경 */}
+                                            <RechartsTooltip content={<CustomTooltip trendData={trendData} yesterdayTrendData={yesterdayTrendData} />} />
                                             {/* 오늘 데이터 라인 */}
                                             {trendData.length > 0 && (
                                                 <RechartsLine
                                                     type="monotone"
                                                     dataKey="value"
-                                                    data={trendData} // 데이터 명시
+                                                    data={trendData}
                                                     stroke="#99DAFF"
                                                     strokeWidth={2}
                                                     dot={false}
                                                     connectNulls={false}
                                                     isAnimationActive={false}
-                                                    name="Today" // 툴팁용 이름
+                                                    name="Today"
                                                 />
                                             )}
                                             {/* 어제 데이터 라인 */}
@@ -321,14 +368,14 @@ function Monitoring() {
                                                 <RechartsLine
                                                     type="monotone"
                                                     dataKey="value"
-                                                    data={yesterdayTrendData} // 데이터 명시
-                                                    stroke="#cccccc" // 회색
+                                                    data={yesterdayTrendData}
+                                                    stroke="#cccccc"
                                                     strokeWidth={2}
-                                                    strokeDasharray="5 5" // 점선
+                                                    strokeDasharray="5 5"
                                                     dot={false}
                                                     connectNulls={false}
                                                     isAnimationActive={false}
-                                                    name="Yesterday" // 툴팁용 이름
+                                                    name="Yesterday"
                                                 />
                                             )}
                                         </LineChart>
