@@ -15,7 +15,8 @@ const TARGET_TIMEZONE = 'America/New_York'; // 피츠버그 시간대 (ET)
 const categoryMap = {
   growth: 'Growth',
   dailylife: 'DailyLife',
-  entertainment: 'Entertainment'
+  entertainment: 'Entertainment',
+  quickswitch: 'QuickSwitch' // QuickSwitch 매핑 추가
   // 필요 시 추가 변형 매핑 가능 (예: 'daily': 'DailyLife')
 };
 
@@ -134,6 +135,7 @@ exports.processTenMinuteBlocks = onSchedule({
               tenMinutesDurationGrowth: 0,
               tenMinutesDurationDailyLife: 0,
               tenMinutesDurationEntertainment: 0,
+              tenMinutesDurationQuickSwitch: 0, // QuickSwitch 필드 추가 (기본값 0)
               calculationTimestamp: admin.firestore.FieldValue.serverTimestamp(), // UTC 서버 시간
               blockStartTimeUTC: admin.firestore.Timestamp.fromDate(blockStartTimeUTC), // 정확한 UTC 시작 시간 저장
               blockTimezone: TARGET_TIMEZONE, // 사용된 시간대 명시
@@ -143,7 +145,7 @@ exports.processTenMinuteBlocks = onSchedule({
            };
         } else {
           // 3. 활성 세션 필터링 및 카테고리별 duration 합산
-          const categoryDurations = { Growth: 0, DailyLife: 0, Entertainment: 0 }; // 집계용 객체 (정식 키 사용)
+          const categoryDurations = { Growth: 0, DailyLife: 0, Entertainment: 0, QuickSwitch: 0 }; // 집계용 객체 (QuickSwitch 추가)
           let activeSessionCount = 0;
 
           sessionsSnapshot.forEach((doc) => {
@@ -194,6 +196,7 @@ exports.processTenMinuteBlocks = onSchedule({
              tenMinutesDurationGrowth: Math.round(categoryDurations.Growth),
              tenMinutesDurationDailyLife: Math.round(categoryDurations.DailyLife),
              tenMinutesDurationEntertainment: Math.round(categoryDurations.Entertainment),
+             tenMinutesDurationQuickSwitch: Math.round(categoryDurations.QuickSwitch), // QuickSwitch 필드 추가
              calculationTimestamp: admin.firestore.FieldValue.serverTimestamp(), // UTC 서버 시간
              blockStartTimeUTC: admin.firestore.Timestamp.fromDate(blockStartTimeUTC), // 정확한 UTC 시작 시간 저장
              blockTimezone: TARGET_TIMEZONE, // 사용된 시간대 명시
@@ -216,6 +219,7 @@ exports.processTenMinuteBlocks = onSchedule({
         const growthInc = blockData.tenMinutesDurationGrowth || 0;
         const dailyLifeInc = blockData.tenMinutesDurationDailyLife || 0;
         const entertainmentInc = blockData.tenMinutesDurationEntertainment || 0;
+        const quickSwitchInc = blockData.tenMinutesDurationQuickSwitch || 0; // QuickSwitch 증가량 계산
 
         // digitalRoutine 필드 업데이트 (FieldValue.increment 사용)
         if (blockData.sessionCount > 0) {
@@ -225,11 +229,12 @@ exports.processTenMinuteBlocks = onSchedule({
                         dailyDurationGrowth: admin.firestore.FieldValue.increment(growthInc),
                         dailyDurationDailyLife: admin.firestore.FieldValue.increment(dailyLifeInc),
                         dailyDurationEntertainment: admin.firestore.FieldValue.increment(entertainmentInc),
+                        dailyDurationQuickSwitch: admin.firestore.FieldValue.increment(quickSwitchInc), // QuickSwitch 필드 업데이트 추가
                         updatedAt: admin.firestore.FieldValue.serverTimestamp(), // 서버 타임스탬프 사용
                     }
                 }, { merge: true }); // merge: true 로 digitalRoutine 필드만 덮어쓰거나 생성
-
-                console.log(`User ${userId}: Updated daily log ${todayDateET} with increments (G:${growthInc}, D:${dailyLifeInc}, E:${entertainmentInc})`);
+                
+                console.log(`User ${userId}: Updated daily log ${todayDateET} with increments (G:${growthInc}, D:${dailyLifeInc}, E:${entertainmentInc}, Q:${quickSwitchInc})`); // 로그에 QuickSwitch 추가
 
             } catch (dailyLogError) {
                 console.error(`User ${userId}: Failed to update daily log ${todayDateET}:`, dailyLogError);

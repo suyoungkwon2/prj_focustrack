@@ -56,21 +56,35 @@ const formatDuration = (totalSeconds) => {
   return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
 };
 
-// 10분 블록 데이터로부터 Major Category 결정
+// 10분 블록 데이터로부터 Major Category 결정 (수정된 로직)
 const getMajorCategory = (blockData) => {
   if (!blockData) return 'NA';
-  const durations = [
+
+  const primaryDurations = [
     { category: 'Growth', duration: blockData.tenMinutesDurationGrowth || 0 },
     { category: 'DailyLife', duration: blockData.tenMinutesDurationDailyLife || 0 },
     { category: 'Entertainment', duration: blockData.tenMinutesDurationEntertainment || 0 },
-    { category: 'QuickSwitch', duration: blockData.tenMinutesDurationQuickSwitch || 0 }, // QuickSwitch 포함
   ];
-  // 0보다 큰 duration만 필터링
-  const activeDurations = durations.filter(d => d.duration > 0);
-  if (activeDurations.length === 0) return 'NA';
-  // 가장 큰 duration 찾기
-  activeDurations.sort((a, b) => b.duration - a.duration);
-  return activeDurations[0].category;
+
+  const quickSwitchDuration = blockData.tenMinutesDurationQuickSwitch || 0;
+
+  // 1. Growth, DailyLife, Entertainment 중 0보다 큰 duration이 있는지 확인
+  const activePrimary = primaryDurations.filter(d => d.duration > 0);
+
+  if (activePrimary.length > 0) {
+    // 2. 셋 중 가장 높은 duration의 카테고리 반환
+    activePrimary.sort((a, b) => b.duration - a.duration);
+    return activePrimary[0].category;
+  } else {
+    // 3. 세 카테고리가 모두 0이면 QuickSwitch 확인
+    if (quickSwitchDuration > 0) {
+      // 4. QuickSwitch 시간이 있으면 QuickSwitch 반환
+      return 'QuickSwitch';
+    } else {
+      // 5. QuickSwitch 시간도 0이면 NA 반환
+      return 'NA';
+    }
+  }
 };
 
 // --- 초기 그리드 키 생성 (ET 기준 HHMM) ---
