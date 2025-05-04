@@ -259,6 +259,7 @@ async function processFocusScoreForUser(userId) {
                 // Note: Field order in Firestore isn't strictly guaranteed
             };
             try {
+                functions.logger.log(`User ${userId}: Data to be saved to FocusScore (Score NOT NULL):`, JSON.stringify(detailedData));
                 await detailedScoreRef.set(detailedData);
                 functions.logger.log(`User ${userId}: Saved detailed focus score to FocusScore/${utcTimestampString}. Score: ${scoreDetails.focusScore.toFixed(4)}`);
             } catch (saveDetailedError) {
@@ -302,6 +303,7 @@ async function processFocusScoreForUser(userId) {
                     message: "No sessions found in calculation window." // Add message field
                 };
                 try {
+                    functions.logger.log(`User ${userId}: Data to be saved to FocusScore (Score IS NULL):`, JSON.stringify(detailedData));
                     await detailedScoreRef.set(detailedData);
                     functions.logger.log(`User ${userId}: Saved detailed log with null score to FocusScore/${utcTimestampString}.`);
                 } catch (saveDetailedError) {
