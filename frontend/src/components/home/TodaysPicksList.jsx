@@ -40,7 +40,7 @@ function TodaysPicksList({ userId }) {
       setPicksList(fetchedPicks);
       setLoading(false);
     }, (err) => {
-      console.error("Error fetching Today's Picks list:", err);
+      console.error("Error fetching 📘 Learning Hightlights 📘 list:", err);
       setError(`Failed to load picks: ${err.code}`);
       setLoading(false);
     });
@@ -54,15 +54,15 @@ function TodaysPicksList({ userId }) {
 
   if (loading) {
     return (
-      <Card title="Today's Picks">
-        <Spin tip="Loading Today's Picks..." />
+      <Card title="📘 Learning Hightlights 📘">
+        <Spin tip="Loading 📘 Learning Hightlights 📘..." />
       </Card>
     );
   }
 
   if (error) {
     return (
-      <Card title="Today's Picks">
+      <Card title="📘 Learning Hightlights 📘">
         <Text type="danger">Error: {error}</Text>
        </Card>
     );
@@ -70,14 +70,14 @@ function TodaysPicksList({ userId }) {
 
   if (picksList.length === 0) {
     return (
-      <Card title="Today's Picks">
+      <Card title="📘 Learning Hightlights 📘">
          <Text>No picks available for today.</Text>
        </Card>
     );
   }
 
   return (
-    <Card title="Today's Picks">
+    <Card title="📘 Learning Hightlights 📘">
       {picksList.map((pick, index) => {
         const mainResult = pick.results && pick.results.length > 0 ? pick.results[0] : null;
         const topic = mainResult ? mainResult.classifiedTopic : undefined;

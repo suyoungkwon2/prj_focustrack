@@ -63,10 +63,9 @@ function WelcomeMessage() {
 
   }, [currentUser]);
 
-  // Card title로 사용할 React 노드 생성
+  // Card title로 사용할 React 노드 생성 (원래 구조 복구)
   const cardTitle = (
     <div>
-      {/* 로딩 중일 때는 Placeholder 표시 */}
       <Text style={{ fontSize: '16px', display: 'block' }}>
         {greeting}, {loadingNickname ? '...' : (nickname || 'lovely user')}!
       </Text>
@@ -74,17 +73,19 @@ function WelcomeMessage() {
   );
 
   return (
-    // title prop에 cardTitle 노드 전달
-    <Card title={cardTitle}>
-      {/* 날짜 및 시간 표시 */}
+    // Card에 marginBottom: 0 적용, title prop 사용 복구
+    <Card title={cardTitle} style={{ marginBottom: 0 }}>
+      {/* 날짜 및 시간 표시 (원래 구조 복구) */}
       <div>
         <Title level={4} style={{ margin: 0, fontSize: '16px', lineHeight: '1.2' }}>
-          {currentLuxonTime.toFormat('yyyy/MM/dd (ccc)')} {/* 괄호 추가 */}
+          {currentLuxonTime.toFormat('yyyy/MM/dd (ccc)')}
         </Title>
         <Title level={2} style={{ margin: 0, fontSize: '24px', lineHeight: '1.2' }}>
-          {currentLuxonTime.toFormat('hh:mm:ss a')} {/* hh 사용 (12시간제) */}
+          {currentLuxonTime.toFormat('hh:mm:ss a')}
         </Title>
       </div>
+      {/* Divider 복구 */}
+      {/* <Divider style={{ margin: '16px 0' }}/> */}
     </Card>
   );
 }

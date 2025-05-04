@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Card, Avatar, Typography, Empty, Tooltip } from 'antd';
+import { Card, Avatar, Typography, Empty, Tooltip, Spin } from 'antd';
 
 const { Text, Link } = Typography;
 
@@ -97,7 +97,8 @@ function FrequentlyVisitedSites() {
   };
 
   return (
-    <Card title="Frequently Visited Sites" style={{ marginBottom: '24px' }}>
+    <Card title="Frequently Visited Sites" style={{ marginBottom: 0 }}>
+      {loading && <Spin />}
       {renderContent()}
     </Card>
   );

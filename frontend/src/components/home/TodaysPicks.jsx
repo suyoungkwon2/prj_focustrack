@@ -38,9 +38,7 @@ function TodaysPicks({ userId, classifiedTopic, classifiedSummary = [], sessionI
 
   // sessionIds나 userId가 변경되면 focusSessions 데이터를 다시 가져옵니다.
   useEffect(() => {
-    // --- 로그 추가 ---
     console.log(`TodaysPicks (${classifiedTopic}): useEffect triggered with`, { userId, sessionIds });
-    // ---------------
 
     const fetchFocusSessions = async () => {
       if (!userId || sessionIds.length === 0) {
@@ -50,7 +48,7 @@ function TodaysPicks({ userId, classifiedTopic, classifiedSummary = [], sessionI
       }
 
       setLoadingSessions(true);
-      setErrorSessions(null); // 에러 상태 초기화
+      setErrorSessions(null);
 
       try {
         const sessionsPromises = sessionIds.map(async (sessionId) => {
@@ -60,7 +58,11 @@ function TodaysPicks({ userId, classifiedTopic, classifiedSummary = [], sessionI
             const querySnap = await getDocs(q);
             if (!querySnap.empty) {
               const docSnap = querySnap.docs[0];
-              return { id: docSnap.id, url: docSnap.data().url };
+              return {
+                id: docSnap.id,
+                url: docSnap.data().url,
+                title: docSnap.data().title
+              };
             } else {
               console.warn(`Session document not found (by field id): ${sessionId} for user ${userId}`);
               return null;
@@ -71,23 +73,17 @@ function TodaysPicks({ userId, classifiedTopic, classifiedSummary = [], sessionI
           }
         });
 
-        // Promise.allSettled를 사용하여 일부 실패해도 나머지는 처리
         const results = await Promise.allSettled(sessionsPromises);
         const fetchedSessions = results
            .filter(result => result.status === 'fulfilled' && result.value !== null)
            .map(result => result.value);
 
-        // 일부 세션 로드 실패 시 경고/에러 처리
         const failedCount = results.filter(result => result.status === 'rejected' || (result.status === 'fulfilled' && result.value === null)).length;
         if (failedCount > 0) {
            console.warn(`${failedCount} session(s) could not be loaded for topic: ${classifiedTopic}`);
-           // 부분 로딩 에러 메시지 설정 (선택 사항)
-           // setErrorSessions(`${failedCount} session(s) failed to load.`);
         }
 
-        // --- 로그 추가 ---
         console.log(`TodaysPicks (${classifiedTopic}): Fetched sessions`, fetchedSessions);
-        // ---------------
 
         setFocusSessions(fetchedSessions);
 
@@ -100,18 +96,23 @@ function TodaysPicks({ userId, classifiedTopic, classifiedSummary = [], sessionI
     };
 
     fetchFocusSessions();
-  }, [userId, sessionIds, classifiedTopic]); // classifiedTopic도 의존성에 추가 (로그용)
+  }, [userId, sessionIds, classifiedTopic]);
 
   // 표시할 세션 목록 결정
   const sessionsToShow = isExpanded ? focusSessions : focusSessions.slice(0, 1);
 
-  // --- 로그 추가 ---
   console.log(`TodaysPicks (${classifiedTopic}): Rendering state`, { loadingSessions, errorSessions, focusSessionsCount: focusSessions.length, sessionsToShowCount: sessionsToShow.length });
-  // ---------------
 
   const renderSession = (session, idx) => {
     const faviconUrl = getFaviconUrl(session.url);
-    const displayUrl = getDomainFromUrl(session.url);
+    let displayTitle = session.title;
+    if (!displayTitle) {
+      try {
+        displayTitle = new URL(session.url).hostname;
+      } catch (e) {
+        displayTitle = session.url || 'Invalid URL';
+      }
+    }
 
     return (
       <div
@@ -120,9 +121,9 @@ function TodaysPicks({ userId, classifiedTopic, classifiedSummary = [], sessionI
       >
         {faviconUrl && <Avatar
                          src={faviconUrl}
-                         size="small" // 작은 크기 유지
+                         size="small"
                          style={{ marginRight: '8px' }}
-                         alt={`${displayUrl} Favicon`}
+                         alt={`${displayTitle} Favicon`}
                        />}
         <Tooltip title={session.url}>
           <Link
@@ -135,11 +136,10 @@ function TodaysPicks({ userId, classifiedTopic, classifiedSummary = [], sessionI
               whiteSpace: 'nowrap',
             }}
           >
-            {displayUrl}
+            {displayTitle}
           </Link>
         </Tooltip>
 
-        {/* 첫 번째 세션 행에 See All/Hide 버튼 우측 정렬 */}
         {idx === 0 && focusSessions.length > 1 && !loadingSessions && (
           <Button
             type="link"
@@ -158,36 +158,20 @@ function TodaysPicks({ userId, classifiedTopic, classifiedSummary = [], sessionI
     return null;
   }
 
-  // Card 제거, div로 감싸기
   return (
-    <div style={{ padding: '0 16px' }}> {/* 피그마에 맞춰 패딩 조정 가능 */}
-       <Title level={5} style={{ marginBottom: '16px' }}>{classifiedTopic}</Title> {/* 주제 제목 추가 */}
-       {/* 요약 내용을 불릿 리스트로 표시 */}
+    <div style={{ padding: '0 16px' }}>
+       <Title level={5} style={{ marginBottom: '16px' }}>{classifiedTopic}</Title>
        {Array.isArray(classifiedSummary) && classifiedSummary.length > 0 ? (
          <>
            <ul style={{ paddingLeft: '20px', marginBottom: '8px' }}>
-             {/* 항상 처음 3개 또는 전체 표시 */}
              {(showAllSummary ? classifiedSummary : classifiedSummary.slice(0, 3)).map((item, index) => {
-               // 3번째 항목까지만 보여주고, 더보기 상태가 아니면 나머지는 숨김
-               // if (!showAllSummary && index >= 3) return null; // slice(0,3)으로 대체
-               // 3번째 항목이고, 더 볼 항목이 있고, 축소 상태일 때 more 버튼 추가 - 로직 변경
-               // const isLastVisibleItem = index === 2 && !showAllSummary && classifiedSummary.length > 3;
                return (
-                 // <li key={index} style={{ display: 'inline' }}> {/* li를 inline으로 변경 시도 */}
                  <li key={index}>
                    {item}
-                   {/* {isLastVisibleItem && (
-                     <Button type="link" size="small" onClick={() => setShowAllSummary(true)} style={{ padding: '0 0 0 4px', display: 'inline' }}>
-                        more
-                     </Button>
-                   )} */} 
-                   {/* 마지막 항목 뒤에는 줄바꿈 추가 */}
-                   {/* <br /> */}
                  </li>
                );
              })}
            </ul>
-           {/* 전체 보기 상태이고 3개 초과 시 less 버튼 추가 / 3개 초과고 축소 상태면 more 버튼 */}
            {classifiedSummary.length > 3 && (
               <div style={{ textAlign: 'right' }}>
                  <Button
@@ -205,15 +189,11 @@ function TodaysPicks({ userId, classifiedTopic, classifiedSummary = [], sessionI
          <Paragraph>{typeof classifiedSummary === 'string' ? classifiedSummary : 'No summary available.'}</Paragraph>
        )}
 
-      {/* 세션 로딩 상태 표시 */}
       {loadingSessions && <Spin size="small" />}
-      {/* 세션 로딩 에러 표시 */}
       {errorSessions && <Alert message={errorSessions} type="error" showIcon style={{ marginBottom: '8px' }}/>}
 
-      {/* 로드된 세션 목록 표시 */}
       {!loadingSessions && sessionsToShow.map((s, i) => renderSession(s, i))}
 
-      {/* 세션 데이터가 없는 경우 (선택 사항) */}
        {!loadingSessions && !errorSessions && focusSessions.length === 0 && sessionIds.length > 0 && (
          <Text type="secondary" style={{ display: 'block', marginTop: '8px' }}>No session details found.</Text>
        )}
