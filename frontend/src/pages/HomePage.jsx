@@ -22,9 +22,9 @@ function HomePage() {
 
   return (
     <div style={{ maxWidth: '1280px', margin: '0 auto' }}>
-      <Row gutter={[24, 24]}>
+      <Row gutter={[24, 24]} align="top">
         <Col span={leftColSpan}>
-          <Space direction="vertical" size={24} style={{ width: '100%' }}>
+          <Space direction="vertical" size={24} style={{ width: '100%', marginTop: 0 }}>
             <WelcomeMessage />
             {/* <SmartAlerts /> */}
             <GSuites />
@@ -39,7 +39,7 @@ function HomePage() {
         </Col>
 
         <Col span={rightColSpan}>
-          <Space direction="vertical" size={24} style={{ width: '100%' }}>
+          <Space direction="vertical" size={24} style={{ width: '100%', marginTop: 0 }}>
             <Monitoring />
             <DigitalRoutine />
           </Space>

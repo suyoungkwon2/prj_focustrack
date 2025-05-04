@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Card, Spin, Typography, Divider } from 'antd';
+import { Card, Spin, Typography, Divider, Alert } from 'antd';
 import { collection, query, orderBy, limit, onSnapshot } from 'firebase/firestore';
 import { db } from '../../firebase/config'; // Firebase 설정 확인
 import TodaysPicks from './TodaysPicks'; // 개별 Pick 컴포넌트
@@ -40,7 +40,7 @@ function TodaysPicksList({ userId }) {
       setPicksList(fetchedPicks);
       setLoading(false);
     }, (err) => {
-      console.error("Error fetching 📘 Learning Hightlights 📘 list:", err);
+      console.error("Error fetching 📘 Learning Highlights 📘 list:", err);
       setError(`Failed to load picks: ${err.code}`);
       setLoading(false);
     });
@@ -54,30 +54,30 @@ function TodaysPicksList({ userId }) {
 
   if (loading) {
     return (
-      <Card title="📘 Learning Hightlights 📘">
-        <Spin tip="Loading 📘 Learning Hightlights 📘..." />
+      <Card title="📘 Learning Highlights 📘">
+        <Spin tip="Loading 📘 Learning Highlights 📘..." />
       </Card>
     );
   }
 
   if (error) {
     return (
-      <Card title="📘 Learning Hightlights 📘">
-        <Text type="danger">Error: {error}</Text>
-       </Card>
+      <Card title="📘 Learning Highlights 📘">
+        <Alert message="Error loading 📘 Learning Highlights 📘" description={error} type="error" showIcon />
+      </Card>
     );
   }
 
   if (picksList.length === 0) {
     return (
-      <Card title="📘 Learning Hightlights 📘">
+      <Card title="📘 Learning Highlights 📘">
          <Text>No picks available for today.</Text>
-       </Card>
+      </Card>
     );
   }
 
   return (
-    <Card title="📘 Learning Hightlights 📘">
+    <Card title="📘 Learning Highlights 📘">
       {picksList.map((pick, index) => {
         const mainResult = pick.results && pick.results.length > 0 ? pick.results[0] : null;
         const topic = mainResult ? mainResult.classifiedTopic : undefined;

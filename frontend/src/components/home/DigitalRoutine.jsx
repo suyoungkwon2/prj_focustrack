@@ -340,15 +340,11 @@ function DigitalRoutine() {
     <Card title="Digital Routine" style={{ marginBottom: 0 }}>
       {/* Auth 로딩 중 메시지 */}
       {loadingAuth && <Text>Please wait, initializing user state...</Text>}
-
-      {/* Auth 완료 후 사용자 없으면 메시지 */}
       {!loadingAuth && !currentUser && <Text>User not available. Cannot load data.</Text>}
-
-      {/* Auth 완료 및 사용자 있으면 데이터 로딩/표시 */}
       {!loadingAuth && currentUser && (
         <>
           {error && <Text type="danger">Error: {error}</Text>}
-          {/* 데이터 로딩 Spin 표시 */}
+          {/* 데이터 로딩 Spin 표시 (Spin 자체 마진 확인 필요) */}
           <Spin spinning={loadingData} tip="Loading Digital Routine...">
               {renderTotalDurations()}
               {renderTimeGrid()}

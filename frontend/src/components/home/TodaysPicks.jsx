@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Card, Typography, Avatar, Button, Tooltip, Spin, Alert } from 'antd';
-import { DownOutlined, UpOutlined } from '@ant-design/icons'; // Ant Design 아이콘 사용
+import { DownOutlined, UpOutlined, LinkOutlined } from '@ant-design/icons'; // Ant Design 아이콘 사용
 import { doc, getDoc, collection, query, where, limit, getDocs } from 'firebase/firestore'; // Firestore 함수 추가
 import { db } from '../../firebase/config'; // Firebase 설정 확인
 
@@ -119,12 +119,21 @@ function TodaysPicks({ userId, classifiedTopic, classifiedSummary = [], sessionI
         key={session.id || session.url}
         style={{ display: 'flex', alignItems: 'center', marginBottom: '8px' }}
       >
-        {faviconUrl && <Avatar
-                         src={faviconUrl}
-                         size="small"
-                         style={{ marginRight: '8px' }}
-                         alt={`${displayTitle} Favicon`}
-                       />}
+        {faviconUrl ? (
+          <Avatar
+            src={faviconUrl}
+            style={{ 
+              width: '16px',
+              height: '16px',
+              marginRight: '8px',
+              verticalAlign: 'middle',
+              objectFit: 'cover'
+            }}
+            alt={`${displayTitle} Favicon`}
+          />
+        ) : (
+          <LinkOutlined style={{ width: '16px', height: '16px', marginRight: '8px', verticalAlign: 'middle' }} />
+        )}
         <Tooltip title={session.url}>
           <Link
             href={session.url}
@@ -160,7 +169,7 @@ function TodaysPicks({ userId, classifiedTopic, classifiedSummary = [], sessionI
 
   return (
     <div style={{ padding: '0 16px' }}>
-       <Title level={5} style={{ marginBottom: '16px' }}>{classifiedTopic}</Title>
+       <Title level={5} style={{ marginBottom: '16px', marginTop: 0 }}>{classifiedTopic}</Title>
        {Array.isArray(classifiedSummary) && classifiedSummary.length > 0 ? (
          <>
            <ul style={{ paddingLeft: '20px', marginBottom: '8px' }}>

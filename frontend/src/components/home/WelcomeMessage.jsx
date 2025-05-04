@@ -73,19 +73,17 @@ function WelcomeMessage() {
   );
 
   return (
-    // Card에 marginBottom: 0 적용, title prop 사용 복구
     <Card title={cardTitle} style={{ marginBottom: 0 }}>
-      {/* 날짜 및 시간 표시 (원래 구조 복구) */}
       <div>
-        <Title level={4} style={{ margin: 0, fontSize: '16px', lineHeight: '1.2' }}>
+        <Title level={5}>{greeting}</Title>
+        {/* 날짜 및 시간 표시 */}
+        <Text style={{ fontSize: '24px', fontWeight: 'bold', display: 'block' }}>
           {currentLuxonTime.toFormat('yyyy/MM/dd (ccc)')}
-        </Title>
+        </Text>
         <Title level={2} style={{ margin: 0, fontSize: '24px', lineHeight: '1.2' }}>
           {currentLuxonTime.toFormat('hh:mm:ss a')}
         </Title>
       </div>
-      {/* Divider 복구 */}
-      {/* <Divider style={{ margin: '16px 0' }}/> */}
     </Card>
   );
 }

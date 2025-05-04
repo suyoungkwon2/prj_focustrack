@@ -57,7 +57,7 @@ function FrequentlyVisitedSites() {
 
     // Row와 Col을 사용한 2열 레이아웃 제거하고 1열로 변경
     return (
-      <div> {/* Row 제거, 단순 div로 감싸기 */}
+      <div> {/* marginTop 제거 */}
         {topSites.map((site) => {
           let originalTitle = site.title;
           let hostname = '';
@@ -97,7 +97,7 @@ function FrequentlyVisitedSites() {
   };
 
   return (
-    <Card title="Frequently Visited Sites" style={{ marginBottom: 0 }}>
+    <Card title="Frequently Visited Sites" style={{ marginBottom: 0 }}> {/* bodyStyle 제거 */}
       {loading && <Spin />}
       {renderContent()}
     </Card>

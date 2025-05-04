@@ -113,7 +113,7 @@ function Layout() {
            {!currentUser && <span style={{ color: '#ccc' }}>Not logged in</span>}
          </div>
       </Header>
-      <Content style={{ padding: '24px 50px', maxWidth: 'none' }}>
+      <Content style={{ padding: '0 50px', paddingTop: '24px' }}>
          {/* 중첩된 라우트의 컴포넌트가 여기에 렌더링됨 */}
         <Outlet />
       </Content>
