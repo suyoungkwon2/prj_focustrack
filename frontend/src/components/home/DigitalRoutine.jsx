@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Card, Typography, Tag, Spin } from 'antd';
+import { Card, Typography, Tag, Spin, Tooltip } from 'antd';
 import { collection, query, where, onSnapshot, doc } from 'firebase/firestore';
 import { db } from '../../firebase/config'; // Firebase 설정 임포트
 import { DateTime } from 'luxon';
@@ -13,11 +13,30 @@ const DAY_START_HOUR = 5; // 하루 시작 시간 (오전 5시)
 const TOTAL_BLOCKS_PER_HOUR = 6; // 시간당 블록 수 (10분 단위)
 const TOTAL_HOURS = 24;
 
-// 카테고리 정보 (색상, 아이콘 이모지)
+// 카테고리 정보 (색상, 아이콘 이모지, 툴팁, 패턴 등 최종본)
 const CATEGORIES = {
-  Growth: { color: '#99DAFF', icon: '📘', nameColor: 'black' },
-  DailyLife: { color: '#FFDDAD', icon: '🏠', nameColor: 'black' },
-  Entertainment: { color: '#FFD6E8', icon: '🎮', nameColor: 'black' },
+  Growth: { // 키: Growth
+    color: '#99DAFF', icon: '📘', nameColor: 'black',
+    tooltip: '📘 Learning-focused: study, coding, research, lectures.', // 툴팁
+    displayName: 'Growth'
+  },
+  DailyLife: { // 키: DailyLife
+    color: '#FFDDAD', icon: '🏠', nameColor: 'black',
+    tooltip: '🏠 Everyday needs: shopping, fitness, health, how-tos.', // 툴팁
+    displayName: 'Daily Life' // 표시 이름
+  },
+  Entertainment: { // 키: Entertainment
+    color: '#FFD6E8', icon: '🎮', nameColor: 'black',
+    tooltip: '🎮 For fun: social media, videos, games, music.', // 툴팁
+    displayName: 'Entertainment'
+  },
+  QuickSwitch: { // 키: QuickSwitch
+    icon: '⚡', nameColor: 'black',
+    pattern: 'repeating-linear-gradient(45deg, transparent, transparent 4px, rgba(0, 0, 0, 0.05) 4px, rgba(0, 0, 0, 0.05) 8px)', // 격자 패턴
+    baseColor: '#f3f3f3',
+    tooltip: '⚡ Brief visits or quick glances', // 툴팁
+    displayName: 'Quick Switch' // 표시 이름
+  },
   NA: { color: '#F3F3F3' }, // NA 색상 변경
   Current: { color: '#A5D8B4' }, // 현재 시간 강조 색상
 };
@@ -44,6 +63,7 @@ const getMajorCategory = (blockData) => {
     { category: 'Growth', duration: blockData.tenMinutesDurationGrowth || 0 },
     { category: 'DailyLife', duration: blockData.tenMinutesDurationDailyLife || 0 },
     { category: 'Entertainment', duration: blockData.tenMinutesDurationEntertainment || 0 },
+    { category: 'QuickSwitch', duration: blockData.tenMinutesDurationQuickSwitch || 0 }, // QuickSwitch 포함
   ];
   // 0보다 큰 duration만 필터링
   const activeDurations = durations.filter(d => d.duration > 0);
@@ -212,17 +232,33 @@ function DigitalRoutine() {
       <div style={{ marginBottom: '16px' }}>
         {Object.entries(CATEGORIES)
           .filter(([key]) => key !== 'NA' && key !== 'Current')
-          .map(([key, { icon, color, nameColor }]) => (
-            <div key={key} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
-              <Tag color={color} style={{ marginRight: '8px', border: 'none', padding: '4px 8px' }}>
-                 <span role="img" aria-label={key} style={{ marginRight: '5px' }}>{icon}</span>
-                 <span style={{ color: nameColor || 'inherit' }}>{key}</span>
-               </Tag>
-               <Text style={{ color: textColor }}>
-                 {dailyLogData ? formatDuration(dailyLogData[`dailyDuration${key}`]) : (loadingData ? '...' : '00:00:00')}
-              </Text>
-            </div>
-          ))}
+          .map(([key, { icon, color, nameColor, displayName, tooltip, pattern, baseColor }]) => {
+            const tagStyle = {
+              marginRight: '8px',
+              border: 'none',
+              padding: '4px 8px'
+            };
+            if (key === 'QuickSwitch') {
+              tagStyle.backgroundImage = pattern;
+              tagStyle.backgroundColor = baseColor;
+            } else {
+              tagStyle.backgroundColor = color;
+            }
+
+            return (
+              <div key={key} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                <Tooltip title={tooltip}>
+                  <Tag style={tagStyle}>
+                     <span role="img" aria-label={key} style={{ marginRight: '5px' }}>{icon}</span>
+                     <span style={{ color: nameColor || 'inherit' }}>{displayName || key}</span>
+                   </Tag>
+                 </Tooltip>
+                 <Text style={{ color: textColor }}>
+                   {dailyLogData ? formatDuration(dailyLogData[`dailyDuration${key}`]) : (loadingData ? '...' : '00:00:00')}
+                </Text>
+              </div>
+            );
+          })}
       </div>
     );
   };
@@ -268,9 +304,17 @@ function DigitalRoutine() {
                          width: `calc(100% / ${TOTAL_BLOCKS_PER_HOUR})`,
                          height: '18px',
                          boxSizing: 'border-box',
-                         transition: 'background-color 0.3s ease, box-shadow 0.3s ease',
+                         transition: 'background-color 0.3s ease, background-image 0.3s ease, box-shadow 0.3s ease',
                          border: '1px solid #fff',
                        };
+
+                       if (category === 'QuickSwitch') {
+                           blockStyle.backgroundColor = CATEGORIES.QuickSwitch.baseColor;
+                           blockStyle.backgroundImage = CATEGORIES.QuickSwitch.pattern;
+                       } else {
+                           blockStyle.backgroundColor = CATEGORIES[category]?.color || CATEGORIES.NA.color;
+                           blockStyle.backgroundImage = 'none';
+                       }
 
                        if (isCurrentBlock) {
                          blockStyle.boxShadow = `inset 0 0 0 2px ${CATEGORIES.Current.color}`;
