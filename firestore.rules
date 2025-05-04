@@ -2,23 +2,58 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // 기존 규칙: 사용자는 자신의 데이터에만 접근 가능
-    match /users/{userId}/{documents=**} {
+    // users 컬렉션 아래의 모든 하위 컬렉션에 대한 공통 규칙 적용 가능
+    // 또는 각 하위 컬렉션별로 명시적 규칙 정의
+
+    // tenMinutesBlock 규칙 (읽기 권한 강화 권장)
+    match /users/{userId}/tenMinutesBlock/{blockId} {
+      // allow read: if true; // 이전 규칙
+      allow read: if request.auth != null && request.auth.uid == userId; // 수정 권장
+      allow write: if request.auth != null && request.auth.uid == userId;
+    }
+
+    // dailylog 규칙 (읽기 권한 강화 권장)
+    match /users/{userId}/dailylog/{logId} {
+      // allow read: if true; // 이전 규칙
+      allow read: if request.auth != null && request.auth.uid == userId; // 수정 권장
+      allow write: if request.auth != null && request.auth.uid == userId;
+    }
+
+    // focusSessions 규칙 (기존 규칙 유지 - 문제 없음)
+    match /users/{userId}/focusSessions/{sessionId} {
       allow read, write: if request.auth != null && request.auth.uid == userId;
     }
 
-    // 멜 수정: users_list 컬렉션 쓰기 규칙 추가
+    // --- classed 컬렉션 규칙 추가 ---
+    match /users/{userId}/classed/{classId} {
+      // 로그인한 사용자가 자신의 classed 데이터 읽기 허용
+      allow read: if request.auth != null && request.auth.uid == userId;
+      // 쓰기 권한은 필요에 따라 추가 (예: 백엔드에서만 쓰거나, 사용자가 직접 쓸 수도 있음)
+      // allow write: if request.auth != null && request.auth.uid == userId;
+    }
+    
+    
+    // FocusScore 컬렉션 규칙 추가
+    match /users/{userId}/FocusScore/{scoreId} {
+      // 로그인한 사용자가 자신의 FocusScore 데이터 읽기 허용
+      allow read: if request.auth != null && request.auth.uid == userId;
+      // 쓰기 권한은 현재 Cloud Function에서만 수행하므로 별도 규칙 불필요 (필요시 추가)
+      // allow write: ... 
+      }
+    
+    // ----------------------------------
+
+    // users_list 규칙 (기존 규칙 유지)
     match /users_list/{userId} {
-      // 인증된 사용자가 자신의 UID와 일치하는 문서 ID에 대해서만 생성/업데이트 허용
       allow create, update: if request.auth != null && request.auth.uid == userId;
-      // 읽기 규칙은 필요에 따라 추가 (예: 함수가 읽어야 한다면 allow read: if true; 또는 더 제한적으로)
+      allow read: if request.auth != null;
     }
 
-    // --- 추가된 규칙 (users 컬렉션 list - 유지) ---
+    // /users/{userId} 문서 자체 규칙 (기존 규칙 유지)
     match /users/{userId} {
-      allow list: if true; // 컬렉션의 문서 ID 목록 읽기 허용 (users_list 사용으로 불필요해질 수 있음)
+       allow read, write: if request.auth != null && request.auth.uid == userId;
     }
 
-    // (선택 사항) 다른 컬렉션에 대한 규칙...
+    // 다른 컬렉션 규칙...
   }
-} 
+}
