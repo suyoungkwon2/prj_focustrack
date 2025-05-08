@@ -215,32 +215,38 @@ exports.processTenMinuteBlocks = onSchedule({
         await blockRef.set(blockData, { merge: true }); // set 사용 (merge는 혹시 모를 충돌 방지)
 
         // --- 추가: 실시간 Dailylog 업데이트 ---
-        const dailyLogRef = db.collection(`users/${userId}/dailylog`).doc(todayDateET); // 오늘 날짜의 dailylog 문서 참조
+        const dailyLogRef = db.collection(`users/${userId}/dailylog`).doc(todayDateET);
         const growthInc = blockData.tenMinutesDurationGrowth || 0;
         const dailyLifeInc = blockData.tenMinutesDurationDailyLife || 0;
         const entertainmentInc = blockData.tenMinutesDurationEntertainment || 0;
-        const quickSwitchInc = blockData.tenMinutesDurationQuickSwitch || 0; // QuickSwitch 증가량 계산
+        const quickSwitchInc = blockData.tenMinutesDurationQuickSwitch || 0;
 
-        // digitalRoutine 필드 업데이트 (FieldValue.increment 사용)
-        if (blockData.sessionCount > 0) {
+        // 업데이트 조건 확인: G/D/E 증가량이 있는지 먼저 확인
+        const hasGdeIncrement = growthInc > 0 || dailyLifeInc > 0 || entertainmentInc > 0;
+        // Q 증가량이 있는지 확인
+        const hasQIncrement = quickSwitchInc > 0;
+
+        // G/D/E 증가량이 있거나, G/D/E는 없지만 Q 증가량이 있는 경우에만 업데이트 실행
+        if (hasGdeIncrement || hasQIncrement) {
             try {
+                // 업데이트 시에는 모든 필드에 increment 적용 (0 더하기는 문제 없음)
                 await dailyLogRef.set({
                     digitalRoutine: {
                         dailyDurationGrowth: admin.firestore.FieldValue.increment(growthInc),
                         dailyDurationDailyLife: admin.firestore.FieldValue.increment(dailyLifeInc),
                         dailyDurationEntertainment: admin.firestore.FieldValue.increment(entertainmentInc),
-                        dailyDurationQuickSwitch: admin.firestore.FieldValue.increment(quickSwitchInc), // QuickSwitch 필드 업데이트 추가
-                        updatedAt: admin.firestore.FieldValue.serverTimestamp(), // 서버 타임스탬프 사용
+                        dailyDurationQuickSwitch: admin.firestore.FieldValue.increment(quickSwitchInc),
+                        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
                     }
-                }, { merge: true }); // merge: true 로 digitalRoutine 필드만 덮어쓰거나 생성
-                
-                console.log(`User ${userId}: Updated daily log ${todayDateET} with increments (G:${growthInc}, D:${dailyLifeInc}, E:${entertainmentInc}, Q:${quickSwitchInc})`); // 로그에 QuickSwitch 추가
+                }, { merge: true });
+
+                console.log(`User ${userId}: Updated daily log ${todayDateET} with increments (G:${growthInc}, D:${dailyLifeInc}, E:${entertainmentInc}, Q:${quickSwitchInc})`);
 
             } catch (dailyLogError) {
                 console.error(`User ${userId}: Failed to update daily log ${todayDateET}:`, dailyLogError);
             }
         } else {
-             // 누적할 데이터가 없어도 updatedAt 갱신
+             // G/D/E/Q 모든 증가량이 0인 경우: updatedAt만 갱신 (기존 로직 유지)
              try {
                  await dailyLogRef.set({
                      digitalRoutine: {
