@@ -13,11 +13,13 @@ import dayjs from 'dayjs';
 import utc from 'dayjs/plugin/utc'; // UTC 플러그인
 import timezone from 'dayjs/plugin/timezone'; // 타임존 플러그인
 import isBetween from 'dayjs/plugin/isBetween'; // isBetween 플러그인 추가
+import isSameOrBefore from 'dayjs/plugin/isSameOrBefore'; // isSameOrBefore 플러그인 import 추가
 
 // dayjs 플러그인 활성화
 dayjs.extend(utc);
 dayjs.extend(timezone);
 dayjs.extend(isBetween); // isBetween 활성화
+dayjs.extend(isSameOrBefore); // isSameOrBefore 활성화 추가
 
 const { Title, Text } = Typography;
 
@@ -47,40 +49,26 @@ const formatSeconds = (totalSeconds) => {
 };
 
 // Recharts Tooltip 커스텀 컨텐츠 수정
-const CustomTooltip = ({ active, payload, label, trendData = [], yesterdayTrendData = [] }) => {
+const CustomTooltip = ({ active, payload, label }) => {
     // label은 X축 값 (타임스탬프)
     if (active && payload && payload.length && label) {
-        // 현재 label(타임스탬프)에 가장 가까운 데이터 포인트를 각 배열에서 찾기
-        // (payload에는 여러 데이터가 겹쳐있을 수 있으므로 label 기준으로 찾는 것이 더 정확할 수 있음)
-        // 여기서는 간단히 payload의 첫 번째 항목의 타임스탬프를 기준으로 함
-        const currentTimestamp = payload[0]?.payload?.timestamp?.getTime(); // payload[0]의 타임스탬프 사용
-        const currentTimeString = currentTimestamp ? dayjs(currentTimestamp).tz('America/New_York').format('HH:mm') : '';
-
-        // payload에서 오늘/어제 값 찾기 (name prop 기준)
-        const todayPayload = payload.find(p => p.name === 'Today');
-        const yesterdayPayload = payload.find(p => p.name === 'Yesterday');
-
-        // payload에 없는 경우, 전체 데이터에서 시간 기준으로 다시 찾아볼 수도 있음 (여기서는 생략)
+        // MM/DD HH:mm 형식으로 시간 표시 (ET 기준)
+        const pointTime = dayjs(label).tz('America/New_York').format('MM/DD HH:mm');
 
         return (
             <div style={{ backgroundColor: 'rgba(255, 255, 255, 0.9)', border: '1px solid #ccc', padding: '10px', fontSize: '12px' }}>
-                 <p style={{ margin: 0, marginBottom: '5px', fontWeight: 'bold' }}>{currentTimeString}</p>
-                 {/* 오늘 데이터 표시 */}
-                 {todayPayload && (
-                    <p style={{ margin: 0, color: todayPayload.stroke }}>
-                         <span style={{ display: 'inline-block', width: '10px', height: '10px', backgroundColor: todayPayload.stroke, marginRight: '5px' }}></span>
-                         Today: {todayPayload.value}%
-                    </p>
-                 )}
-                  {/* 어제 데이터 표시 */}
-                 {yesterdayPayload && (
-                      <p style={{ margin: 0, color: yesterdayPayload.stroke }}>
-                         <span style={{ display: 'inline-block', width: '10px', height: '10px', backgroundColor: yesterdayPayload.stroke, marginRight: '5px' }}></span>
-                          Yesterday: {yesterdayPayload.value}%
-                     </p>
-                 )}
-                  {/* 둘 다 없는 경우 (호버 위치 문제 등) */}
-                  {!todayPayload && !yesterdayPayload && <p style={{ margin: 0 }}>No data at this point</p>}
+                 <p style={{ margin: 0, marginBottom: '5px', fontWeight: 'bold' }}>{pointTime}</p>
+                 {payload.map((pld, index) => {
+                    // pld.name 은 "Today" 또는 "Yesterday"
+                    // pld.value 는 점수, 없으면 null/undefined
+                    const valueDisplay = pld.value !== null && pld.value !== undefined ? `${pld.value}%` : 'N/A';
+                    return (
+                        <p key={index} style={{ margin: 0, color: pld.stroke }}>
+                            <span style={{ display: 'inline-block', width: '10px', height: '10px', backgroundColor: pld.stroke, marginRight: '5px' }}></span>
+                            {pld.name}: {valueDisplay}
+                        </p>
+                    );
+                 })}
             </div>
         );
     }
@@ -200,31 +188,35 @@ function Monitoring() {
                     todayCycleStartDateET = todayCycleStartDateET.subtract(1, 'day');
                 }
                 const todayCycleEndDateET = todayCycleStartDateET.add(1, 'day'); // 오늘 5AM ~ 다음날 5AM
+
+                // 어제 데이터의 시작/종료 시간 정의 (오늘의 시작점을 기준으로 계산)
                 const yesterdayCycleStartDateET = todayCycleStartDateET.subtract(1, 'day'); // 어제 5AM
-                const yesterdayCycleEndDateET = todayCycleStartDateET; // 어제 끝 = 오늘 시작
+                // const yesterdayCycleEndDateET = todayCycleStartDateET; // 어제 끝 = 오늘 시작 (쿼리용)
 
                 const todayStartTimestamp = Timestamp.fromDate(todayCycleStartDateET.toDate());
                 const todayEndTimestamp = Timestamp.fromDate(todayCycleEndDateET.toDate());
                 const yesterdayStartTimestamp = Timestamp.fromDate(yesterdayCycleStartDateET.toDate());
-                const yesterdayEndTimestamp = todayStartTimestamp;
+                const yesterdayEndTimestamp = todayStartTimestamp; // 어제 데이터는 오늘 시작 전까지
 
-                // --- X축 도메인 및 틱 설정 ---
-                const startMillis = todayCycleStartDateET.valueOf(); // 오늘 5AM 밀리초
-                const endMillis = todayCycleEndDateET.valueOf();     // 다음날 5AM 밀리초
-                setXAxisDomain([startMillis, endMillis]);
+                // --- X축 도메인 및 틱 설정 (어제 5AM ET ~ 다음날 5AM ET) ---
+                const xAxisStartPointET = yesterdayCycleStartDateET; // 어제 5 AM ET
+                const xAxisEndPointET = todayCycleEndDateET;         // 다음날 5 AM ET
+                setXAxisDomain([xAxisStartPointET.valueOf(), xAxisEndPointET.valueOf()]);
 
                 const ticks = [];
-                let currentTick = todayCycleStartDateET;
-                while (currentTick.isBefore(todayCycleEndDateET.add(1, 'hour'))) { // 다음날 5시까지 포함하여 틱 생성
-                     // 3시간 간격 틱 생성 (05:00, 08:00, 11:00, ...)
-                    if (currentTick.hour() % 3 === (5 % 3)) { // 5시 기준 3시간 간격
-                         ticks.push(currentTick.valueOf());
+                let currentTickIter = xAxisStartPointET.clone();
+                // xAxisEndPointET 까지 포함하여 틱 생성
+                while (currentTickIter.isSameOrBefore(xAxisEndPointET)) {
+                    // 매 3시간 정각 (00, 03, 06, 09, 12, 15, 18, 21시)
+                    if (currentTickIter.minute() === 0 && currentTickIter.hour() % 3 === 0) {
+                        ticks.push(currentTickIter.valueOf());
                     }
-                     currentTick = currentTick.add(1, 'hour');
-                 }
+                    currentTickIter = currentTickIter.add(1, 'hour');
+                }
                 setXAxisTicks(ticks);
-                 console.log("Monitoring Trend: XAxis Domain:", new Date(startMillis), new Date(endMillis));
-                 console.log("Monitoring Trend: XAxis Ticks:", ticks.map(t => dayjs(t).tz(timeZone).format('HH:mm')));
+
+                console.log("Monitoring Trend: XAxis Domain:", xAxisStartPointET.format('MM/DD HH:mm Z'), 'to', xAxisEndPointET.format('MM/DD HH:mm Z'));
+                console.log("Monitoring Trend: XAxis Ticks:", ticks.map(t => dayjs(t).tz(timeZone).format('MM/DD HH:mm')));
 
 
                 console.log(`Monitoring Trend: Today Query [${todayStartTimestamp.toDate().toISOString()} UTC, ${todayEndTimestamp.toDate().toISOString()} UTC)`);
@@ -347,8 +339,8 @@ function Monitoring() {
                                                 padding={{ left: 10, right: 10 }} // 좌우 패딩 추가
                                             />
                                             {/* YAxis는 제거된 상태 유지 */}
-                                            {/* 툴팁 - props 전달 방식 변경 */}
-                                            <RechartsTooltip content={<CustomTooltip trendData={trendData} yesterdayTrendData={yesterdayTrendData} />} />
+                                            {/* 툴팁 - shared={false} 추가 */}
+                                            <RechartsTooltip content={<CustomTooltip />} shared={false} />
                                             {/* 오늘 데이터 라인 */}
                                             {trendData.length > 0 && (
                                                 <RechartsLine

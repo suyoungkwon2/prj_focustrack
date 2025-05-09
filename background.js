@@ -9,7 +9,7 @@ console.log("Background script loaded"); // Simplified log
 
 let lastActivityTime = Date.now();
 let activeStartTime = null;
-const ACTIVE_SESSION_THRESHOLD = 15 * 1000;
+const ACTIVE_SESSION_THRESHOLD = 5 * 1000;
 const MERGE_WINDOW = 10 * 60 * 1000;
 
 let eventCounter = { mousemove: 0, click: 0, keydown: 0 };
